@@ -37,6 +37,14 @@ public sealed class DocumentService : IDocumentService
         if (!tarafExists)
             throw new ApiException(404, "CUSTOMER_NOT_FOUND", "طرف حساب مورد نظر یافت نشد.");
 
+        var cashboxExists = await _context.CheckDefs
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == request.IdSandogh && x.Type == request.IdSandoghType,
+                cancellationToken);
+
+        if (!cashboxExists)
+            throw new ApiException(409, "INVALID_CASHBOX", "صندوق/حساب انتخاب‌شده معتبر نیست.");
+
         var distinctKalaIds = request.Items
             .Select(x => x.IdKala)
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -85,18 +93,6 @@ public sealed class DocumentService : IDocumentService
                 }
             }
         }
-
-        var userCashbox = await _context.Users
-            .AsNoTracking()
-            .Where(x => x.Id == request.IdMasool)
-            .Select(x => new { x.IdSandogh, x.IdSandoghType })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (userCashbox == null)
-            throw new ApiException(404, "USER_NOT_FOUND", "کاربر مسئول سند یافت نشد.");
-
-        if (userCashbox.IdSandogh <= 0 || userCashbox.IdSandoghType <= 0)
-            throw new ApiException(409, "INVALID_USER_CASHBOX", "برای کاربر مسئول سند، صندوق/حساب معتبر تنظیم نشده است.");
 
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
@@ -151,8 +147,8 @@ public sealed class DocumentService : IDocumentService
             ShowInFaktor = true,
             TasviehDate = request.SabtDate,
             IsTasviehDate = false,
-            IDSandogh = userCashbox.IdSandogh,
-            IDSandoghType = userCashbox.IdSandoghType,
+            IDSandogh = request.IdSandogh,
+            IDSandoghType = request.IdSandoghType,
             MabKart = 0,
             MabFish = 0,
             IDKart = 0,
