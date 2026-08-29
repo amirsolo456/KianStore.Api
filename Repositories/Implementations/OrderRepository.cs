@@ -5,7 +5,7 @@ using KianStore.Api.Repositories.Interfaces;
 
 namespace KianStore.Api.Repositories.Implementations;
 
-public class OrderRepository : IOrderRepository
+public sealed class OrderRepository : IOrderRepository
 {
     private readonly KianStoreDbContext _context;
 
@@ -14,16 +14,28 @@ public class OrderRepository : IOrderRepository
         _context = context;
     }
 
-    public async Task<MobileOrder?> GetByIdAsync(long id)
+    public async Task<MobileOrder?> GetByIdAsync(
+        long id,
+        CancellationToken cancellationToken = default)
     {
         return await _context.MobileOrders
+            .AsNoTracking()
             .Include(o => o.Items)
-            .FirstOrDefaultAsync(o => o.Id == id);
+            .Include(o => o.Payments)
+            .FirstOrDefaultAsync(
+                o => o.Id == id,
+                cancellationToken);
     }
 
-    public async Task<IEnumerable<MobileOrder>> GetAllAsync(int page = 1, int pageSize = 20, MobileOrderStatus? status = null)
+    public async Task<IEnumerable<MobileOrder>> GetAllAsync(
+        int page = 1,
+        int pageSize = 20,
+        MobileOrderStatus? status = null,
+        CancellationToken cancellationToken = default)
     {
-        var query = _context.MobileOrders.AsQueryable();
+        var query = _context.MobileOrders
+            .AsNoTracking()
+            .AsQueryable();
 
         if (status.HasValue)
         {
@@ -32,28 +44,39 @@ public class OrderRepository : IOrderRepository
 
         return await query
             .OrderByDescending(o => o.CreatedAt)
+            .ThenByDescending(o => o.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<MobileOrder> CreateAsync(MobileOrder order)
+    public async Task<MobileOrder> CreateAsync(
+        MobileOrder order,
+        CancellationToken cancellationToken = default)
     {
         _context.MobileOrders.Add(order);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return order;
     }
 
-    public async Task UpdateAsync(MobileOrder order)
+    public async Task UpdateAsync(
+        MobileOrder order,
+        CancellationToken cancellationToken = default)
     {
         _context.MobileOrders.Update(order);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<string> GenerateOrderNumberAsync()
+    public async Task<string> GenerateOrderNumberAsync(
+        CancellationToken cancellationToken = default)
     {
         var date = DateTime.Now.ToString("yyyyMMdd");
-        var count = await _context.MobileOrders.CountAsync(o => o.CreatedAt.Date == DateTime.Today);
+
+        var count = await _context.MobileOrders
+            .CountAsync(
+                o => o.CreatedAt.Date == DateTime.Today,
+                cancellationToken);
+
         return $"MO-{date}-{(count + 1):D4}";
     }
 }
