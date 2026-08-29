@@ -4,9 +4,24 @@ namespace KianStore.Api.Repositories.Interfaces;
 
 public interface IOrderRepository
 {
-    Task<MobileOrder?> GetByIdAsync(long id);
-    Task<IEnumerable<MobileOrder>> GetAllAsync(int page = 1, int pageSize = 20, MobileOrderStatus? status = null);
-    Task<MobileOrder> CreateAsync(MobileOrder order);
-    Task UpdateAsync(MobileOrder order);
-    Task<string> GenerateOrderNumberAsync();
+    Task<MobileOrder?> GetByIdAsync(
+        long id,
+        CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<MobileOrder>> GetAllAsync(
+        int page = 1,
+        int pageSize = 20,
+        MobileOrderStatus? status = null,
+        CancellationToken cancellationToken = default);
+
+    Task<MobileOrder> CreateAsync(
+        MobileOrder order,
+        CancellationToken cancellationToken = default);
+
+    Task UpdateAsync(
+        MobileOrder order,
+        CancellationToken cancellationToken = default);
+
+    Task<string> GenerateOrderNumberAsync(
+        CancellationToken cancellationToken = default);
 }
