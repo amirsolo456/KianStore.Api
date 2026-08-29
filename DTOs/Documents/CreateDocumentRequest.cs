@@ -1,0 +1,61 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace KianStore.Api.DTOs.Documents;
+
+public sealed class CreateDocumentRequest
+{
+    [Range(1, int.MaxValue)]
+    public int IdSal { get; init; } = 1405;
+
+    [Range(1, int.MaxValue)]
+    public int SanadType { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int IdAnbar { get; init; } = 1;
+
+    [Range(1, int.MaxValue)]
+    public int IdTaraf { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int IdTarafType { get; init; } = 2;
+
+    [Range(1, int.MaxValue)]
+    public int IdMasool { get; init; } = 101;
+
+    [Range(1, int.MaxValue)]
+    public int? IdFaktor { get; init; }
+
+    [Required]
+    [StringLength(10)]
+    public string SabtDate { get; init; } = null!;
+
+    [StringLength(200)]
+    public string? Des { get; init; }
+
+    [StringLength(700)]
+    public string? Sharh { get; init; }
+
+    public bool CheckStock { get; init; } = true;
+
+    [MinLength(1)]
+    public List<CreateDocumentItemRequest> Items { get; init; } = new();
+}
+
+public sealed class CreateDocumentItemRequest
+{
+    [Required]
+    [StringLength(20)]
+    public string IdKala { get; init; } = null!;
+
+    [Range(typeof(decimal), "0.001", "79228162514264337593543950335")]
+    public decimal Quantity { get; init; }
+
+    [Range(typeof(decimal), "0", "79228162514264337593543950335")]
+    public decimal? UnitPrice { get; init; }
+
+    // false = خروج از موجودی (فروش), true = ورود به موجودی (خرید/ورود)
+    public bool IsIncoming { get; init; }
+
+    [StringLength(200)]
+    public string? Description { get; init; }
+}
