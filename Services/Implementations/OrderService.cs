@@ -11,21 +11,15 @@ public sealed class OrderService : IOrderService
     private readonly IOrderRepository _orderRepository;
     private readonly IProductRepository _productRepository;
     private readonly ICustomerRepository _customerRepository;
-    private readonly IStockService _stockService;
-
-    private const int CurrentSal = 1405;
-    private const int DefaultAnbarId = 1;
 
     public OrderService(
         IOrderRepository orderRepository,
         IProductRepository productRepository,
-        ICustomerRepository customerRepository,
-        IStockService stockService)
+        ICustomerRepository customerRepository)
     {
         _orderRepository = orderRepository;
         _productRepository = productRepository;
         _customerRepository = customerRepository;
-        _stockService = stockService;
     }
 
     public async Task<ApiResponse<OrderResponse>> CreateOrderAsync(
@@ -33,77 +27,136 @@ public sealed class OrderService : IOrderService
         CancellationToken cancellationToken = default)
     {
         if (request is null)
-            return ApiResponse<OrderResponse>.ErrorResult("INVALID_REQUEST", "اطلاعات سفارش معتبر نیست.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_REQUEST",
+                "اطلاعات سفارش معتبر نیست.");
+        }
 
-        if (string.IsNullOrWhiteSpace(request.Mobile))
-            return ApiResponse<OrderResponse>.ErrorResult("INVALID_MOBILE", "شماره موبایل الزامی است.");
+        var firstName = request.FirstName?.Trim();
+        var lastName = request.LastName?.Trim();
+        var mobile = request.Mobile?.Trim();
+
+        if (string.IsNullOrWhiteSpace(firstName) ||
+            string.IsNullOrWhiteSpace(lastName))
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_CUSTOMER_NAME",
+                "نام و نام خانوادگی الزامی است.");
+        }
+
+        if (string.IsNullOrWhiteSpace(mobile))
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_MOBILE",
+                "شماره موبایل الزامی است.");
+        }
 
         if (request.Items is null || request.Items.Count == 0)
-            return ApiResponse<OrderResponse>.ErrorResult("ORDER_ITEMS_EMPTY", "حداقل یک کالا باید به سفارش اضافه شود.");
-
-        var taraf = await _customerRepository.GetByMobileAsync(request.Mobile.Trim());
-        int? tarafId = taraf?.Id;
-        int? tarafType = taraf?.IdType;
-
-        var items = new List<MobileOrderItem>();
-
-        foreach (var itemReq in request.Items)
         {
-            if (string.IsNullOrWhiteSpace(itemReq.KalaId))
-                return ApiResponse<OrderResponse>.ErrorResult("INVALID_PRODUCT_ID", "شناسه کالا معتبر نیست.");
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "ORDER_ITEMS_EMPTY",
+                "حداقل یک کالا باید به سفارش اضافه شود.");
+        }
 
-            if (itemReq.Quantity <= 0)
-                return ApiResponse<OrderResponse>.ErrorResult("INVALID_QUANTITY", $"تعداد کالای {itemReq.KalaId} باید بیشتر از صفر باشد.");
+        if (request.PaymentAmount.HasValue && request.PaymentAmount.Value < 0)
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_PAYMENT_AMOUNT",
+                "مبلغ پرداخت نمی‌تواند منفی باشد.");
+        }
 
-            var product = await _productRepository.GetByIdAsync(itemReq.KalaId);
+        if (request.PaymentAmount > 0 && string.IsNullOrWhiteSpace(request.PaymentDate))
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "PAYMENT_DATE_REQUIRED",
+                "برای مبلغ واریزی، تاریخ واریز الزامی است.");
+        }
+
+        // Use an existing KianStore customer when available.
+        var taraf = await _customerRepository.GetByMobileAsync(mobile);
+
+        var items = new List<MobileOrderItem>(request.Items.Count);
+
+        foreach (var itemRequest in request.Items)
+        {
+            var kalaId = itemRequest.KalaId?.Trim();
+
+            if (string.IsNullOrWhiteSpace(kalaId))
+            {
+                return ApiResponse<OrderResponse>.ErrorResult(
+                    "INVALID_PRODUCT_ID",
+                    "شناسه کالا معتبر نیست.");
+            }
+
+            if (itemRequest.Quantity <= 0)
+            {
+                return ApiResponse<OrderResponse>.ErrorResult(
+                    "INVALID_QUANTITY",
+                    $"تعداد کالای {kalaId} باید بیشتر از صفر باشد.");
+            }
+
+            var product = await _productRepository.GetByIdAsync(kalaId);
 
             if (product is null)
-                return ApiResponse<OrderResponse>.ErrorResult("PRODUCT_NOT_FOUND", $"کالا با کد {itemReq.KalaId} یافت نشد.");
+            {
+                return ApiResponse<OrderResponse>.ErrorResult(
+                    "PRODUCT_NOT_FOUND",
+                    $"کالا با کد {kalaId} یافت نشد.");
+            }
 
             if (product.IsDisabled)
-                return ApiResponse<OrderResponse>.ErrorResult("PRODUCT_DISABLED", $"کالای «{product.KalaName}» قابل فروش نیست.");
-
-            var canSell = await _stockService.CanSellAsync(
-                product.Id,
-                itemReq.Quantity,
-                DefaultAnbarId,
-                CurrentSal,
-                cancellationToken);
-
-            if (!canSell)
+            {
                 return ApiResponse<OrderResponse>.ErrorResult(
-                    "INSUFFICIENT_STOCK",
-                    $"موجودی کالای «{product.KalaName}» برای تعداد درخواستی کافی نیست.");
+                    "PRODUCT_DISABLED",
+                    $"کالای «{product.KalaName}» قابل فروش نیست.");
+            }
 
             var unitPrice = product.MabFrosh;
-            var totalPrice = itemReq.Quantity * unitPrice;
+            var totalPrice = itemRequest.Quantity * unitPrice;
 
             items.Add(new MobileOrderItem
             {
                 KalaId = product.Id,
-                Quantity = itemReq.Quantity,
+                Quantity = itemRequest.Quantity,
                 UnitPrice = unitPrice,
                 TotalPrice = totalPrice
             });
         }
 
+        var paymentAmount = request.PaymentAmount ?? 0m;
+
         var order = new MobileOrder
         {
             OrderNumber = await _orderRepository.GenerateOrderNumberAsync(),
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
-            Mobile = request.Mobile.Trim(),
+            FirstName = firstName,
+            LastName = lastName,
+            Mobile = mobile,
             Address = request.Address?.Trim(),
-            PaymentDate = request.PaymentDate,
-            PaymentAmount = request.PaymentAmount ?? 0,
-            Status = MobileOrderStatus.Created,
-            TarafId = tarafId,
-            TarafType = tarafType,
+            PaymentDate = request.PaymentDate?.Trim(),
+            PaymentAmount = paymentAmount,
+            Status = paymentAmount > 0
+                ? MobileOrderStatus.PaymentSubmitted
+                : MobileOrderStatus.Created,
+            TarafId = taraf?.Id,
+            TarafType = taraf?.IdType,
             Notes = request.Notes?.Trim(),
             CreatedAt = DateTime.Now,
             CreatedBy = 101,
             Items = items
         };
+
+        if (paymentAmount > 0)
+        {
+            order.Payments.Add(new MobileOrderPayment
+            {
+                PaymentDate = request.PaymentDate!.Trim(),
+                Amount = paymentAmount,
+                CreatedAt = DateTime.Now,
+                CreatedBy = 101,
+                Notes = "پرداخت ثبت‌شده هنگام ایجاد سفارش"
+            });
+        }
 
         await _orderRepository.CreateAsync(order);
 
@@ -118,21 +171,44 @@ public sealed class OrderService : IOrderService
         var order = await _orderRepository.GetByIdAsync(orderId);
 
         if (order is null)
-            return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "ORDER_NOT_FOUND",
+                "سفارش یافت نشد.");
+        }
 
         if (request is null)
-            return ApiResponse<OrderResponse>.ErrorResult("INVALID_PAYMENT", "اطلاعات پرداخت معتبر نیست.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_PAYMENT",
+                "اطلاعات پرداخت معتبر نیست.");
+        }
 
         if (request.Amount <= 0)
-            return ApiResponse<OrderResponse>.ErrorResult("INVALID_PAYMENT_AMOUNT", "مبلغ پرداخت باید بیشتر از صفر باشد.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_PAYMENT_AMOUNT",
+                "مبلغ پرداخت باید بیشتر از صفر باشد.");
+        }
 
-        if (order.Status == MobileOrderStatus.Cancelled || order.Status == MobileOrderStatus.ConvertedToSanad)
-            return ApiResponse<OrderResponse>.ErrorResult("INVALID_ORDER_STATUS", "امکان ثبت پرداخت برای این وضعیت سفارش وجود ندارد.");
+        if (string.IsNullOrWhiteSpace(request.PaymentDate))
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "PAYMENT_DATE_REQUIRED",
+                "تاریخ پرداخت الزامی است.");
+        }
+
+        if (order.Status is MobileOrderStatus.Cancelled or MobileOrderStatus.ConvertedToSanad)
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_ORDER_STATUS",
+                "امکان ثبت پرداخت برای این وضعیت سفارش وجود ندارد.");
+        }
 
         order.Payments.Add(new MobileOrderPayment
         {
             OrderId = orderId,
-            PaymentDate = request.PaymentDate,
+            PaymentDate = request.PaymentDate.Trim(),
             Amount = request.Amount,
             TrackingNumber = request.TrackingNumber?.Trim(),
             BankName = request.BankName?.Trim(),
@@ -144,9 +220,12 @@ public sealed class OrderService : IOrderService
         order.PaymentAmount += request.Amount;
 
         if (order.Status is MobileOrderStatus.Created or MobileOrderStatus.WaitingForPayment)
+        {
             order.Status = MobileOrderStatus.PaymentSubmitted;
+        }
 
         await _orderRepository.UpdateAsync(order);
+
         return await GetOrderByIdAsync(orderId, cancellationToken);
     }
 
@@ -158,18 +237,32 @@ public sealed class OrderService : IOrderService
         var order = await _orderRepository.GetByIdAsync(orderId);
 
         if (order is null)
-            return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "ORDER_NOT_FOUND",
+                "سفارش یافت نشد.");
+        }
 
         var payment = order.Payments.FirstOrDefault(p => p.Id == paymentId);
 
         if (payment is null)
-            return ApiResponse<OrderResponse>.ErrorResult("PAYMENT_NOT_FOUND", "اطلاعات پرداخت یافت نشد.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "PAYMENT_NOT_FOUND",
+                "اطلاعات پرداخت یافت نشد.");
+        }
 
         if (order.Status == MobileOrderStatus.Cancelled)
-            return ApiResponse<OrderResponse>.ErrorResult("INVALID_ORDER_STATUS", "سفارش لغو شده است.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_ORDER_STATUS",
+                "سفارش لغو شده است.");
+        }
 
         order.Status = MobileOrderStatus.PaymentVerified;
+
         await _orderRepository.UpdateAsync(order);
+
         return await GetOrderByIdAsync(orderId, cancellationToken);
     }
 
@@ -180,7 +273,18 @@ public sealed class OrderService : IOrderService
         var order = await _orderRepository.GetByIdAsync(orderId);
 
         if (order is null)
-            return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "ORDER_NOT_FOUND",
+                "سفارش یافت نشد.");
+        }
+
+        if (order.Status is MobileOrderStatus.Cancelled or MobileOrderStatus.ConvertedToSanad)
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_ORDER_STATUS",
+                "وضعیت فعلی سفارش اجازه تأیید را نمی‌دهد.");
+        }
 
         if (order.Status != MobileOrderStatus.PaymentVerified &&
             order.Status != MobileOrderStatus.PaymentSubmitted)
@@ -190,25 +294,15 @@ public sealed class OrderService : IOrderService
                 "سفارش باید در وضعیت پرداخت باشد تا تأیید شود.");
         }
 
-        foreach (var item in order.Items)
-        {
-            var canSell = await _stockService.CanSellAsync(
-                item.KalaId,
-                item.Quantity,
-                DefaultAnbarId,
-                CurrentSal,
-                cancellationToken);
-
-            if (!canSell)
-            {
-                return ApiResponse<OrderResponse>.ErrorResult(
-                    "INSUFFICIENT_STOCK",
-                    $"موجودی کالای {item.KalaId} برای تعداد درخواستی کافی نیست.");
-            }
-        }
+        // Stock is intentionally not checked here yet.
+        // The KianStore database currently has no populated StoreSanadDetail data
+        // from which a reliable stock check can be derived.
+        // Stock validation will be reintroduced after its source is confirmed.
 
         order.Status = MobileOrderStatus.Confirmed;
+
         await _orderRepository.UpdateAsync(order);
+
         return await GetOrderByIdAsync(orderId, cancellationToken);
     }
 
@@ -219,9 +313,14 @@ public sealed class OrderService : IOrderService
         var order = await _orderRepository.GetByIdAsync(id);
 
         if (order is null)
-            return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
+        {
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "ORDER_NOT_FOUND",
+                "سفارش یافت نشد.");
+        }
 
-        return ApiResponse<OrderResponse>.SuccessResult(MapToResponse(order));
+        return ApiResponse<OrderResponse>.SuccessResult(
+            MapToResponse(order));
     }
 
     public async Task<ApiResponse<IEnumerable<OrderResponse>>> GetOrdersAsync(
@@ -233,10 +332,17 @@ public sealed class OrderService : IOrderService
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var orders = await _orderRepository.GetAllAsync(page, pageSize, status);
-        var response = orders.Select(MapToResponse).ToList();
+        var orders = await _orderRepository.GetAllAsync(
+            page,
+            pageSize,
+            status);
 
-        return ApiResponse<IEnumerable<OrderResponse>>.SuccessResult(response);
+        var response = orders
+            .Select(MapToResponse)
+            .ToList();
+
+        return ApiResponse<IEnumerable<OrderResponse>>.SuccessResult(
+            response);
     }
 
     private static OrderResponse MapToResponse(MobileOrder order)
