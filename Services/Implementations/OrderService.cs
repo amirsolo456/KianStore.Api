@@ -27,11 +27,9 @@ public sealed class OrderService : IOrderService
         CancellationToken cancellationToken = default)
     {
         if (request is null)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "INVALID_REQUEST",
                 "اطلاعات سفارش معتبر نیست.");
-        }
 
         var firstName = request.FirstName?.Trim();
         var lastName = request.LastName?.Trim();
@@ -66,14 +64,14 @@ public sealed class OrderService : IOrderService
                 "مبلغ پرداخت نمی‌تواند منفی باشد.");
         }
 
-        if (request.PaymentAmount > 0 && string.IsNullOrWhiteSpace(request.PaymentDate))
+        if (request.PaymentAmount > 0 &&
+            string.IsNullOrWhiteSpace(request.PaymentDate))
         {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "PAYMENT_DATE_REQUIRED",
                 "برای مبلغ واریزی، تاریخ واریز الزامی است.");
         }
 
-        // Use an existing KianStore customer when available.
         var taraf = await _customerRepository.GetByMobileAsync(mobile);
 
         var items = new List<MobileOrderItem>(request.Items.Count);
@@ -128,7 +126,7 @@ public sealed class OrderService : IOrderService
 
         var order = new MobileOrder
         {
-            OrderNumber = await _orderRepository.GenerateOrderNumberAsync(),
+            OrderNumber = await _orderRepository.GenerateOrderNumberAsync(cancellationToken),
             FirstName = firstName,
             LastName = lastName,
             Mobile = mobile,
@@ -158,7 +156,7 @@ public sealed class OrderService : IOrderService
             });
         }
 
-        await _orderRepository.CreateAsync(order);
+        await _orderRepository.CreateAsync(order, cancellationToken);
 
         return await GetOrderByIdAsync(order.Id, cancellationToken);
     }
@@ -168,42 +166,34 @@ public sealed class OrderService : IOrderService
         AddPaymentRequest request,
         CancellationToken cancellationToken = default)
     {
-        var order = await _orderRepository.GetByIdAsync(orderId);
+        var order = await _orderRepository.GetByIdAsync(
+            orderId,
+            cancellationToken);
 
         if (order is null)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "ORDER_NOT_FOUND",
                 "سفارش یافت نشد.");
-        }
 
         if (request is null)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "INVALID_PAYMENT",
                 "اطلاعات پرداخت معتبر نیست.");
-        }
 
         if (request.Amount <= 0)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "INVALID_PAYMENT_AMOUNT",
                 "مبلغ پرداخت باید بیشتر از صفر باشد.");
-        }
 
         if (string.IsNullOrWhiteSpace(request.PaymentDate))
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "PAYMENT_DATE_REQUIRED",
                 "تاریخ پرداخت الزامی است.");
-        }
 
         if (order.Status is MobileOrderStatus.Cancelled or MobileOrderStatus.ConvertedToSanad)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "INVALID_ORDER_STATUS",
                 "امکان ثبت پرداخت برای این وضعیت سفارش وجود ندارد.");
-        }
 
         order.Payments.Add(new MobileOrderPayment
         {
@@ -220,11 +210,9 @@ public sealed class OrderService : IOrderService
         order.PaymentAmount += request.Amount;
 
         if (order.Status is MobileOrderStatus.Created or MobileOrderStatus.WaitingForPayment)
-        {
             order.Status = MobileOrderStatus.PaymentSubmitted;
-        }
 
-        await _orderRepository.UpdateAsync(order);
+        await _orderRepository.UpdateAsync(order, cancellationToken);
 
         return await GetOrderByIdAsync(orderId, cancellationToken);
     }
@@ -234,34 +222,30 @@ public sealed class OrderService : IOrderService
         long paymentId,
         CancellationToken cancellationToken = default)
     {
-        var order = await _orderRepository.GetByIdAsync(orderId);
+        var order = await _orderRepository.GetByIdAsync(
+            orderId,
+            cancellationToken);
 
         if (order is null)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "ORDER_NOT_FOUND",
                 "سفارش یافت نشد.");
-        }
 
         var payment = order.Payments.FirstOrDefault(p => p.Id == paymentId);
 
         if (payment is null)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "PAYMENT_NOT_FOUND",
                 "اطلاعات پرداخت یافت نشد.");
-        }
 
         if (order.Status == MobileOrderStatus.Cancelled)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "INVALID_ORDER_STATUS",
                 "سفارش لغو شده است.");
-        }
 
         order.Status = MobileOrderStatus.PaymentVerified;
 
-        await _orderRepository.UpdateAsync(order);
+        await _orderRepository.UpdateAsync(order, cancellationToken);
 
         return await GetOrderByIdAsync(orderId, cancellationToken);
     }
@@ -270,21 +254,19 @@ public sealed class OrderService : IOrderService
         long orderId,
         CancellationToken cancellationToken = default)
     {
-        var order = await _orderRepository.GetByIdAsync(orderId);
+        var order = await _orderRepository.GetByIdAsync(
+            orderId,
+            cancellationToken);
 
         if (order is null)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "ORDER_NOT_FOUND",
                 "سفارش یافت نشد.");
-        }
 
         if (order.Status is MobileOrderStatus.Cancelled or MobileOrderStatus.ConvertedToSanad)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "INVALID_ORDER_STATUS",
                 "وضعیت فعلی سفارش اجازه تأیید را نمی‌دهد.");
-        }
 
         if (order.Status != MobileOrderStatus.PaymentVerified &&
             order.Status != MobileOrderStatus.PaymentSubmitted)
@@ -294,14 +276,13 @@ public sealed class OrderService : IOrderService
                 "سفارش باید در وضعیت پرداخت باشد تا تأیید شود.");
         }
 
-        // Stock is intentionally not checked here yet.
-        // The KianStore database currently has no populated StoreSanadDetail data
-        // from which a reliable stock check can be derived.
-        // Stock validation will be reintroduced after its source is confirmed.
-
+        // Stock validation is intentionally deferred until the actual KianStore
+        // stock source is confirmed. The current StoreAnbarMojodi source has no
+        // data after the database cleanup, so checking it here would incorrectly
+        // reject valid orders.
         order.Status = MobileOrderStatus.Confirmed;
 
-        await _orderRepository.UpdateAsync(order);
+        await _orderRepository.UpdateAsync(order, cancellationToken);
 
         return await GetOrderByIdAsync(orderId, cancellationToken);
     }
@@ -310,14 +291,14 @@ public sealed class OrderService : IOrderService
         long id,
         CancellationToken cancellationToken = default)
     {
-        var order = await _orderRepository.GetByIdAsync(id);
+        var order = await _orderRepository.GetByIdAsync(
+            id,
+            cancellationToken);
 
         if (order is null)
-        {
             return ApiResponse<OrderResponse>.ErrorResult(
                 "ORDER_NOT_FOUND",
                 "سفارش یافت نشد.");
-        }
 
         return ApiResponse<OrderResponse>.SuccessResult(
             MapToResponse(order));
@@ -335,7 +316,8 @@ public sealed class OrderService : IOrderService
         var orders = await _orderRepository.GetAllAsync(
             page,
             pageSize,
-            status);
+            status,
+            cancellationToken);
 
         var response = orders
             .Select(MapToResponse)
