@@ -14,6 +14,7 @@ public class KianStoreDbContext : DbContext
     public DbSet<KalaDetail> KalaDetails => Set<KalaDetail>();
     public DbSet<Taraf> Tarafs => Set<Taraf>();
     public DbSet<Anbar> Anbars => Set<Anbar>();
+    public DbSet<Users> Users => Set<Users>();
     public DbSet<Sanad> Sanads => Set<Sanad>();
     public DbSet<SanadDetail> SanadDetails => Set<SanadDetail>();
 
@@ -44,6 +45,14 @@ public class KianStoreDbContext : DbContext
         modelBuilder.Entity<Anbar>(entity =>
         {
             entity.HasKey(x => x.Id);
+        });
+
+        modelBuilder.Entity<Users>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasColumnName("ID");
+            entity.Property(x => x.IdSandogh).HasColumnName("IDSandogh");
+            entity.Property(x => x.IdSandoghType).HasColumnName("IDSandoghType");
         });
 
         modelBuilder.Entity<Sanad>(entity =>
