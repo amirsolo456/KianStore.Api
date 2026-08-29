@@ -1,0 +1,11 @@
+@KianStore.Api_HostAddress = http://localhost:5069
+
+GET {{KianStore.Api_HostAddress}}/openapi/v1.json
+Accept: application/json
+
+###
+
+GET {{KianStore.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
