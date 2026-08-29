@@ -25,6 +25,12 @@ public sealed class CreateDocumentRequest
     [Range(1, int.MaxValue)]
     public int? IdFaktor { get; init; }
 
+    [Range(1, int.MaxValue)]
+    public int IdSandogh { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int IdSandoghType { get; init; }
+
     [Required]
     [StringLength(10)]
     public string SabtDate { get; init; } = null!;
