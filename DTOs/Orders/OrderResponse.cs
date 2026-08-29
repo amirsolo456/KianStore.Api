@@ -10,10 +10,13 @@ public class OrderResponse
     public string LastName { get; set; } = null!;
     public string Mobile { get; set; } = null!;
     public string? Address { get; set; }
+    public string? PaymentDate { get; set; }
     public decimal PaymentAmount { get; set; }
     public decimal TotalAmount { get; set; }
     public MobileOrderStatus Status { get; set; }
     public string StatusText => Status.ToString();
+    public int? TarafId { get; set; }
+    public string? SanadId { get; set; }
     public DateTime CreatedAt { get; set; }
     public List<OrderItemResponse> Items { get; set; } = new();
 }
