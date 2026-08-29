@@ -18,25 +18,14 @@ builder.Services.AddDbContext<KianStoreDbContext>(options =>
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<ICustomerRepository, CustomerRepository>();
-builder.Services.AddScoped<IOrderRepository, OrderRepository>();
-builder.Services.AddScoped<IStockRepository, StockRepository>();
 
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
-builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddScoped<IStockService, StockService>();
-builder.Services.AddScoped<ISanadService, SanadService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<KianStoreDbContext>();
-    await MobileOrderDatabaseInitializer.InitializeAsync(dbContext);
-}
 
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
