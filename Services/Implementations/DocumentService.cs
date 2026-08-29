@@ -19,23 +19,32 @@ public sealed class DocumentService : IDocumentService
         _stockService = stockService;
     }
 
-    public async Task<ApiResponse<DocumentResponse>> CreateAsync(CreateDocumentRequest request, CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<DocumentResponse>> CreateAsync(
+        CreateDocumentRequest request,
+        CancellationToken cancellationToken = default)
     {
         if (request.Items.Count == 0)
             throw new ApiException(400, "EMPTY_DOCUMENT", "سند حداقل باید یک قلم داشته باشد.");
 
-        if (string.IsNullOrWhiteSpace(request.SabtDate) || request.SabtDate.Length != 10)
+        if (request.SabtDate.Length != 10)
             throw new ApiException(400, "INVALID_DATE", "تاریخ سند باید به صورت yyyy/MM/dd باشد.");
 
-        var tarafExists = await _context.Tarafs.AsNoTracking()
-            .AnyAsync(x => x.Id == request.IdTaraf && x.IdType == request.IdTarafType && !x.IsDisabled, cancellationToken);
+        var tarafExists = await _context.Tarafs
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == request.IdTaraf && x.IdType == request.IdTarafType && !x.IsDisabled,
+                cancellationToken);
 
         if (!tarafExists)
             throw new ApiException(404, "CUSTOMER_NOT_FOUND", "طرف حساب مورد نظر یافت نشد.");
 
-        var kalaIds = request.Items.Select(x => x.IdKala).Distinct().ToList();
+        var distinctKalaIds = request.Items
+            .Select(x => x.IdKala)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .ToList();
+
         var products = await _context.Kalas
-            .Where(x => kalaIds.Contains(x.Id))
+            .Where(x => distinctKalaIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 
         foreach (var item in request.Items)
@@ -51,26 +60,37 @@ public sealed class DocumentService : IDocumentService
 
             if (!item.IsIncoming && request.CheckStock)
             {
-                var stock = await _stockService.CheckAsync(item.IdKala, item.Quantity, request.IdAnbar, request.IdSal, cancellationToken);
+                var stock = await _stockService.CheckAsync(
+                    item.IdKala,
+                    item.Quantity,
+                    request.IdAnbar,
+                    request.IdSal,
+                    cancellationToken);
+
                 if (!stock.IsAvailable)
                 {
-                    throw new ApiException(409, "INSUFFICIENT_STOCK", $"موجودی کالای {item.IdKala} کافی نیست.", new
-                    {
-                        stock.KalaId,
-                        stock.IdAnbar,
-                        stock.IdSal,
-                        stock.Requested,
-                        stock.Available,
-                        stock.IsAvailable
-                    });
+                    throw new ApiException(
+                        409,
+                        "INSUFFICIENT_STOCK",
+                        $"موجودی کالای {item.IdKala} کافی نیست.",
+                        new
+                        {
+                            stock.KalaId,
+                            stock.IdAnbar,
+                            stock.IdSal,
+                            stock.Requested,
+                            stock.Available,
+                            stock.IsAvailable
+                        });
                 }
             }
         }
 
-        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         var sanadId = await GenerateSanadIdAsync(request.IdSal, cancellationToken);
         var factorId = request.IdFaktor ?? await GenerateFactorIdAsync(request.IdSal, cancellationToken);
+
         var sanad = new Sanad
         {
             IdSal = request.IdSal,
@@ -90,7 +110,10 @@ public sealed class DocumentService : IDocumentService
             MabCheck = 0,
             MabBed = 0,
             IdMasool = request.IdMasool,
+            IdTaiid = null,
             Des = request.Des,
+            IDEijad = null,
+            IdDoreh = null,
             CountGhest = 0,
             DarsadGhest = 0,
             Maliat1 = 0,
@@ -103,6 +126,7 @@ public sealed class DocumentService : IDocumentService
             MabKolAghsat = 0,
             GhestSel = false,
             KarmozdFrosh = 0,
+            TarafName2 = null,
             Sharh = request.Sharh,
             Takhfif2 = 0,
             IsTasvieh = false,
@@ -122,7 +146,7 @@ public sealed class DocumentService : IDocumentService
             IDKart = 0,
             IDTypeKart = 0,
             IsFinal = false,
-            IdFroshMabType = 0,
+            IDFroshMabType = 0,
             SanadTime = DateTime.Now.ToString("HH:mm:ss"),
             TakhfifKala1 = false,
             TakhfifKala2 = false,
@@ -139,13 +163,21 @@ public sealed class DocumentService : IDocumentService
             HazFaktor2 = 0,
             IDHazFaktor2 = 0,
             TakhfifDarsad = 0,
+            TakhfifOnvan = null,
             MabEzaf = 0,
             MabEzafDarsad = 0,
+            MabEzafOnvan = null,
+            SefareshID = null,
             IsSavedFinal = false,
+            IDSanad = 0,
             Takhfif3 = 0,
             TakhfifKala = 0,
             IDFish = 0,
             IDFoodMahal = 0,
+            Tel = null,
+            Add = null,
+            CodeMeli = null,
+            Miz = null,
             GpsLat = 0,
             GpsLong = 0,
             TasvieType = 0,
@@ -156,12 +188,28 @@ public sealed class DocumentService : IDocumentService
             IDRef = "",
             SanadTypeRef = 0,
             IDRefRecive = "",
+            FroshArzesh = null,
+            TakhfifKalaArzesh = null,
+            HMaliat1 = null,
+            HMaliat2 = null,
+            TejaratCode = null,
             StateMaliat = 0,
             SabtDateOrg = request.SabtDate,
             MabBonKart = 0,
             MabBonKartTakhfif = 0,
             Takhfif1 = 0,
-            IDTarafTahator = 0
+            IDTarafTahator = 0,
+            TasviehRozSum = null,
+            IDSanadAtf = null,
+            MabFroshCalNaghd = null,
+            MabCalNaghd = null,
+            MabKarMozd = null,
+            MabTahator = null,
+            SumMabEzafatMoaf = null,
+            IDState = null,
+            CodeMaliat = null,
+            IsTasviehFaktor = null,
+            TasviehMab = null
         };
 
         var details = new List<SanadDetail>();
@@ -180,6 +228,7 @@ public sealed class DocumentService : IDocumentService
                 IdSal = request.IdSal,
                 IdSanad = sanadId,
                 Id2 = row++,
+                AtfNum = null,
                 IdKala = product.Id,
                 Bed = item.IsIncoming ? (double)item.Quantity : 0,
                 Bes = item.IsIncoming ? 0 : (double)item.Quantity,
@@ -190,34 +239,75 @@ public sealed class DocumentService : IDocumentService
                 IdAnbar = request.IdAnbar,
                 IdKalaType = product.KalaType,
                 BedMabKharid = product.MabKharid,
+                Maliat = 0,
+                Maliat1 = false,
+                Maliat2 = false,
+                TakhfifDarsad = 0,
+                PorsantDarsad = 0,
+                HazKala = 0,
+                HazKalaKharid = 0,
                 IdSanjesh = product.IdSanjesh,
                 IdSanjesh2 = product.IdSanjesh2,
                 BedBesZarib = 1,
                 SanadType = request.SanadType,
+                PropKala = null,
+                PropKala2 = null,
+                Des1 = null,
+                Des2 = null,
+                Des3 = null,
+                SumBed = null,
+                SumBes = null,
+                HazKala2 = null,
+                HazKala3 = null,
                 SumTakhfifKala = 0,
+                HazKala1 = null,
+                HazKalaGift1 = null,
+                HazKalaGift2 = null,
+                HazKalaGift3 = null,
                 IdAttribValuesStock = "",
+                TakhfifD2 = null,
+                TakhfifD3 = null,
+                TakhfifMab1 = null,
+                TakhfifMab2 = null,
+                MaliatD1 = null,
+                MaliatD2 = null,
+                TasviehRoz = null,
+                MaliatMab1 = null,
+                MaliatMab2 = null,
+                SumMabTakh = null,
+                SumMabMaliat = null,
+                MabFroshByTakh = null,
                 Bed2 = item.IsIncoming ? (double)item.Quantity : 0,
                 Bes2 = item.IsIncoming ? 0 : (double)item.Quantity,
                 BedMab2 = item.IsIncoming ? unitPrice : 0,
-                BesMab2 = item.IsIncoming ? 0 : unitPrice
+                BesMab2 = item.IsIncoming ? 0 : unitPrice,
+                MabEzafatMoaf = null
             });
         }
 
         sanad.MabKol = total;
         sanad.MabFrosh = total;
+        sanad.MabNaghd = 0;
         sanad.MabBed = total;
 
         _context.Sanads.Add(sanad);
         _context.SanadDetails.AddRange(details);
         await _context.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
-        return ApiResponse<DocumentResponse>.SuccessResult(Map(sanad, details), "سند با موفقیت ثبت شد.");
+        return ApiResponse<DocumentResponse>.SuccessResult(
+            Map(sanad, details),
+            "سند با موفقیت ثبت شد.");
     }
 
-    public async Task<ApiResponse<DocumentResponse>> GetAsync(int idSal, string id, CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<DocumentResponse>> GetAsync(
+        int idSal,
+        string id,
+        CancellationToken cancellationToken = default)
     {
-        var sanad = await _context.Sanads.AsNoTracking().FirstOrDefaultAsync(x => x.IdSal == idSal && x.Id == id, cancellationToken);
+        var sanad = await _context.Sanads.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.IdSal == idSal && x.Id == id, cancellationToken);
+
         if (sanad == null)
             throw new ApiException(404, "DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد.");
 
@@ -231,37 +321,54 @@ public sealed class DocumentService : IDocumentService
 
     private async Task<string> GenerateSanadIdAsync(int idSal, CancellationToken cancellationToken)
     {
-        var ids = await _context.Sanads.AsNoTracking().Where(x => x.IdSal == idSal).Select(x => x.Id).ToListAsync(cancellationToken);
-        var max = ids.Select(x => int.TryParse(x, out var n) ? n : 0).DefaultIfEmpty(0).Max();
+        var ids = await _context.Sanads.AsNoTracking()
+            .Where(x => x.IdSal == idSal)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var max = ids.Select(ParseNumeric).DefaultIfEmpty(0).Max();
         return (max + 1).ToString();
     }
 
     private async Task<int> GenerateFactorIdAsync(int idSal, CancellationToken cancellationToken)
     {
-        return (await _context.Sanads.AsNoTracking().Where(x => x.IdSal == idSal).Select(x => (int?)x.IdFaktor).MaxAsync(cancellationToken) ?? 0) + 1;
+        var max = await _context.Sanads.AsNoTracking()
+            .Where(x => x.IdSal == idSal)
+            .Select(x => (int?)x.IdFaktor)
+            .MaxAsync(cancellationToken) ?? 0;
+
+        return max + 1;
     }
 
-    private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details) => new()
+    private static long ParseNumeric(string value)
     {
-        IdSal = sanad.IdSal,
-        Id = sanad.Id,
-        SanadType = sanad.SanadType,
-        IdAnbar = sanad.IdAnbar,
-        IdTaraf = sanad.IdTaraf,
-        IdTarafType = sanad.IdTarafType,
-        IdFaktor = sanad.IdFaktor,
-        SabtDate = sanad.SabtDate,
-        TotalAmount = sanad.MabKol,
-        IsFinal = sanad.IsFinal,
-        Description = sanad.Des,
-        Items = details.Select(x => new DocumentItemResponse
+        return long.TryParse(value, out var number) ? number : 0;
+    }
+
+    private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details)
+    {
+        return new DocumentResponse
         {
-            Id2 = x.Id2,
-            IdKala = x.IdKala,
-            Quantity = x.Bed2 > 0 ? x.Bed2 : x.Bes2,
-            IsIncoming = x.Bed2 > 0,
-            UnitPrice = x.Bed2 > 0 ? x.BedMab2 : x.BesMab2,
-            TotalAmount = x.SumMab
-        }).ToList()
-    };
+            IdSal = sanad.IdSal,
+            Id = sanad.Id,
+            SanadType = sanad.SanadType,
+            IdAnbar = sanad.IdAnbar,
+            IdTaraf = sanad.IdTaraf,
+            IdTarafType = sanad.IdTarafType,
+            IdFaktor = sanad.IdFaktor,
+            SabtDate = sanad.SabtDate,
+            TotalAmount = sanad.MabKol,
+            IsFinal = sanad.IsFinal,
+            Description = sanad.Des,
+            Items = details.Select(x => new DocumentItemResponse
+            {
+                Id2 = x.Id2,
+                IdKala = x.IdKala,
+                Quantity = x.Bed2 > 0 ? x.Bed2 : x.Bes2,
+                IsIncoming = x.Bed2 > 0,
+                UnitPrice = x.Bed2 > 0 ? x.BedMab2 : x.BesMab2,
+                TotalAmount = x.SumMab
+            }).ToList()
+        };
+    }
 }
