@@ -47,6 +47,8 @@ public sealed class DocumentService : IDocumentService
             .Where(x => distinctKalaIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 
+        var stockWarnings = new List<object>();
+
         foreach (var item in request.Items)
         {
             if (item.Quantity <= 0)
@@ -69,19 +71,17 @@ public sealed class DocumentService : IDocumentService
 
                 if (!stock.IsAvailable)
                 {
-                    throw new ApiException(
-                        409,
-                        "INSUFFICIENT_STOCK",
-                        $"موجودی کالای {item.IdKala} کافی نیست.",
-                        new
-                        {
-                            stock.KalaId,
-                            stock.IdAnbar,
-                            stock.IdSal,
-                            stock.Requested,
-                            stock.Available,
-                            stock.IsAvailable
-                        });
+                    stockWarnings.Add(new
+                    {
+                        code = "INSUFFICIENT_STOCK",
+                        message = $"موجودی کالای {item.IdKala} کافی نیست.",
+                        stock.KalaId,
+                        stock.IdAnbar,
+                        stock.IdSal,
+                        stock.Requested,
+                        stock.Available,
+                        stock.IsAvailable
+                    });
                 }
             }
         }
@@ -295,8 +295,18 @@ public sealed class DocumentService : IDocumentService
         await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        var response = Map(sanad, details);
+        if (stockWarnings.Count > 0)
+        {
+            return ApiResponse<DocumentResponse>.SuccessWithWarningResult(
+                response,
+                stockWarnings,
+                "سند ثبت شد، اما موجودی یک یا چند کالا کافی نبود.",
+                "STOCK_WARNING");
+        }
+
         return ApiResponse<DocumentResponse>.SuccessResult(
-            Map(sanad, details),
+            response,
             "سند با موفقیت ثبت شد.");
     }
 
