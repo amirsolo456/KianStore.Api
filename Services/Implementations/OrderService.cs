@@ -1,18 +1,20 @@
 using KianStore.Api.Common;
 using KianStore.Api.DTOs.Orders;
-using KianStore.Api.Models.KianStore;
 using KianStore.Api.Models.Orders;
 using KianStore.Api.Repositories.Interfaces;
 using KianStore.Api.Services.Interfaces;
 
 namespace KianStore.Api.Services.Implementations;
 
-public class OrderService : IOrderService
+public sealed class OrderService : IOrderService
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IProductRepository _productRepository;
     private readonly ICustomerRepository _customerRepository;
     private readonly IStockService _stockService;
+
+    private const int CurrentSal = 1405;
+    private const int DefaultAnbarId = 1;
 
     public OrderService(
         IOrderRepository orderRepository,
@@ -26,173 +28,218 @@ public class OrderService : IOrderService
         _stockService = stockService;
     }
 
-    public async Task<ApiResponse<OrderResponse>> CreateOrderAsync(CreateOrderRequest request)
+    public async Task<ApiResponse<OrderResponse>> CreateOrderAsync(
+        CreateOrderRequest request,
+        CancellationToken cancellationToken = default)
     {
-        // 1. Find or Create Customer
-        var taraf = await _customerRepository.GetByMobileAsync(request.Mobile);
+        if (request is null)
+            return ApiResponse<OrderResponse>.ErrorResult("INVALID_REQUEST", "اطلاعات سفارش معتبر نیست.");
+
+        if (string.IsNullOrWhiteSpace(request.Mobile))
+            return ApiResponse<OrderResponse>.ErrorResult("INVALID_MOBILE", "شماره موبایل الزامی است.");
+
+        if (request.Items is null || request.Items.Count == 0)
+            return ApiResponse<OrderResponse>.ErrorResult("ORDER_ITEMS_EMPTY", "حداقل یک کالا باید به سفارش اضافه شود.");
+
+        var taraf = await _customerRepository.GetByMobileAsync(request.Mobile.Trim());
         int? tarafId = taraf?.Id;
         int? tarafType = taraf?.IdType;
 
-        // 2. Calculate prices and build items
         var items = new List<MobileOrderItem>();
-        decimal totalAmount = 0;
 
         foreach (var itemReq in request.Items)
         {
-            var product = await _productRepository.GetByIdAsync(itemReq.KalaId);
-            if (product == null)
-            {
-                return ApiResponse<OrderResponse>.ErrorResult("PRODUCT_NOT_FOUND", $"کالا با کد {itemReq.KalaId} یافت نشد.");
-            }
+            if (string.IsNullOrWhiteSpace(itemReq.KalaId))
+                return ApiResponse<OrderResponse>.ErrorResult("INVALID_PRODUCT_ID", "شناسه کالا معتبر نیست.");
 
-            var orderItem = new MobileOrderItem
+            if (itemReq.Quantity <= 0)
+                return ApiResponse<OrderResponse>.ErrorResult("INVALID_QUANTITY", $"تعداد کالای {itemReq.KalaId} باید بیشتر از صفر باشد.");
+
+            var product = await _productRepository.GetByIdAsync(itemReq.KalaId);
+
+            if (product is null)
+                return ApiResponse<OrderResponse>.ErrorResult("PRODUCT_NOT_FOUND", $"کالا با کد {itemReq.KalaId} یافت نشد.");
+
+            if (product.IsDisabled)
+                return ApiResponse<OrderResponse>.ErrorResult("PRODUCT_DISABLED", $"کالای «{product.KalaName}» قابل فروش نیست.");
+
+            var canSell = await _stockService.CanSellAsync(
+                product.Id,
+                itemReq.Quantity,
+                DefaultAnbarId,
+                CurrentSal,
+                cancellationToken);
+
+            if (!canSell)
+                return ApiResponse<OrderResponse>.ErrorResult(
+                    "INSUFFICIENT_STOCK",
+                    $"موجودی کالای «{product.KalaName}» برای تعداد درخواستی کافی نیست.");
+
+            var unitPrice = product.MabFrosh;
+            var totalPrice = itemReq.Quantity * unitPrice;
+
+            items.Add(new MobileOrderItem
             {
                 KalaId = product.Id,
                 Quantity = itemReq.Quantity,
-                UnitPrice = product.MabFrosh,
-                TotalPrice = itemReq.Quantity * product.MabFrosh
-            };
-
-            items.Add(orderItem);
-            totalAmount += orderItem.TotalPrice;
+                UnitPrice = unitPrice,
+                TotalPrice = totalPrice
+            });
         }
 
-        // 3. Create Order
         var order = new MobileOrder
         {
             OrderNumber = await _orderRepository.GenerateOrderNumberAsync(),
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            Mobile = request.Mobile,
-            Address = request.Address,
+            FirstName = request.FirstName.Trim(),
+            LastName = request.LastName.Trim(),
+            Mobile = request.Mobile.Trim(),
+            Address = request.Address?.Trim(),
             PaymentDate = request.PaymentDate,
             PaymentAmount = request.PaymentAmount ?? 0,
             Status = MobileOrderStatus.Created,
             TarafId = tarafId,
             TarafType = tarafType,
-            Notes = request.Notes,
+            Notes = request.Notes?.Trim(),
             CreatedAt = DateTime.Now,
+            CreatedBy = 101,
             Items = items
         };
 
         await _orderRepository.CreateAsync(order);
 
-        return await GetOrderByIdAsync(order.Id);
+        return await GetOrderByIdAsync(order.Id, cancellationToken);
     }
 
-    public async Task<ApiResponse<OrderResponse>> AddPaymentAsync(long orderId, AddPaymentRequest request)
+    public async Task<ApiResponse<OrderResponse>> AddPaymentAsync(
+        long orderId,
+        AddPaymentRequest request,
+        CancellationToken cancellationToken = default)
     {
         var order = await _orderRepository.GetByIdAsync(orderId);
-        if (order == null)
-        {
+
+        if (order is null)
             return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
-        }
+
+        if (request is null)
+            return ApiResponse<OrderResponse>.ErrorResult("INVALID_PAYMENT", "اطلاعات پرداخت معتبر نیست.");
+
+        if (request.Amount <= 0)
+            return ApiResponse<OrderResponse>.ErrorResult("INVALID_PAYMENT_AMOUNT", "مبلغ پرداخت باید بیشتر از صفر باشد.");
 
         if (order.Status == MobileOrderStatus.Cancelled || order.Status == MobileOrderStatus.ConvertedToSanad)
-        {
             return ApiResponse<OrderResponse>.ErrorResult("INVALID_ORDER_STATUS", "امکان ثبت پرداخت برای این وضعیت سفارش وجود ندارد.");
-        }
 
-        var payment = new MobileOrderPayment
+        order.Payments.Add(new MobileOrderPayment
         {
             OrderId = orderId,
             PaymentDate = request.PaymentDate,
             Amount = request.Amount,
-            TrackingNumber = request.TrackingNumber,
-            BankName = request.BankName,
-            Notes = request.Notes,
-            CreatedAt = DateTime.Now
-        };
+            TrackingNumber = request.TrackingNumber?.Trim(),
+            BankName = request.BankName?.Trim(),
+            Notes = request.Notes?.Trim(),
+            CreatedAt = DateTime.Now,
+            CreatedBy = 101
+        });
 
-        order.Payments.Add(payment);
         order.PaymentAmount += request.Amount;
 
-        if (order.Status == MobileOrderStatus.Created || order.Status == MobileOrderStatus.WaitingForPayment)
-        {
+        if (order.Status is MobileOrderStatus.Created or MobileOrderStatus.WaitingForPayment)
             order.Status = MobileOrderStatus.PaymentSubmitted;
-        }
 
         await _orderRepository.UpdateAsync(order);
-
-        return await GetOrderByIdAsync(orderId);
+        return await GetOrderByIdAsync(orderId, cancellationToken);
     }
 
-    public async Task<ApiResponse<OrderResponse>> VerifyPaymentAsync(long orderId, long paymentId)
+    public async Task<ApiResponse<OrderResponse>> VerifyPaymentAsync(
+        long orderId,
+        long paymentId,
+        CancellationToken cancellationToken = default)
     {
         var order = await _orderRepository.GetByIdAsync(orderId);
-        if (order == null)
-        {
+
+        if (order is null)
             return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
-        }
 
         var payment = order.Payments.FirstOrDefault(p => p.Id == paymentId);
-        if (payment == null)
-        {
-            return ApiResponse<OrderResponse>.ErrorResult("PAYMENT_NOT_FOUND", "اطلاعات پرداخت یافت نشد.");
-        }
 
-        // In a real scenario, this would involve checking with a bank gateway or manual verification
-        // For now, we just mark it as verified.
+        if (payment is null)
+            return ApiResponse<OrderResponse>.ErrorResult("PAYMENT_NOT_FOUND", "اطلاعات پرداخت یافت نشد.");
+
+        if (order.Status == MobileOrderStatus.Cancelled)
+            return ApiResponse<OrderResponse>.ErrorResult("INVALID_ORDER_STATUS", "سفارش لغو شده است.");
 
         order.Status = MobileOrderStatus.PaymentVerified;
         await _orderRepository.UpdateAsync(order);
-
-        return await GetOrderByIdAsync(orderId);
+        return await GetOrderByIdAsync(orderId, cancellationToken);
     }
 
-    public async Task<ApiResponse<OrderResponse>> ConfirmOrderAsync(long orderId)
+    public async Task<ApiResponse<OrderResponse>> ConfirmOrderAsync(
+        long orderId,
+        CancellationToken cancellationToken = default)
     {
         var order = await _orderRepository.GetByIdAsync(orderId);
-        if (order == null)
-        {
+
+        if (order is null)
             return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
-        }
 
-        if (order.Status != MobileOrderStatus.PaymentVerified && order.Status != MobileOrderStatus.PaymentSubmitted)
+        if (order.Status != MobileOrderStatus.PaymentVerified &&
+            order.Status != MobileOrderStatus.PaymentSubmitted)
         {
-            return ApiResponse<OrderResponse>.ErrorResult("INVALID_ORDER_STATUS", "سفارش باید در وضعیت پرداخت شده باشد تا تایید شود.");
+            return ApiResponse<OrderResponse>.ErrorResult(
+                "INVALID_ORDER_STATUS",
+                "سفارش باید در وضعیت پرداخت باشد تا تأیید شود.");
         }
 
-        // Check stock before confirmation
         foreach (var item in order.Items)
         {
-            if (!await _stockService.CanSellAsync(
-        item.KalaId,
-        item.Quantity,
-        item.idAnbar,
-        item.idSal,
-            cancellationToken))
+            var canSell = await _stockService.CanSellAsync(
+                item.KalaId,
+                item.Quantity,
+                DefaultAnbarId,
+                CurrentSal,
+                cancellationToken);
+
+            if (!canSell)
             {
-                return ApiResponse<OrderResponse>.ErrorResult("INSUFFICIENT_STOCK", $"موجودی کالای {item.KalaId} کافی نیست.");
+                return ApiResponse<OrderResponse>.ErrorResult(
+                    "INSUFFICIENT_STOCK",
+                    $"موجودی کالای {item.KalaId} برای تعداد درخواستی کافی نیست.");
             }
         }
 
         order.Status = MobileOrderStatus.Confirmed;
         await _orderRepository.UpdateAsync(order);
-
-        return await GetOrderByIdAsync(orderId);
+        return await GetOrderByIdAsync(orderId, cancellationToken);
     }
 
-    public async Task<ApiResponse<OrderResponse>> GetOrderByIdAsync(long id)
+    public async Task<ApiResponse<OrderResponse>> GetOrderByIdAsync(
+        long id,
+        CancellationToken cancellationToken = default)
     {
         var order = await _orderRepository.GetByIdAsync(id);
-        if (order == null)
-        {
-            return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
-        }
 
-        var response = MapToResponse(order);
-        return ApiResponse<OrderResponse>.SuccessResult(response);
+        if (order is null)
+            return ApiResponse<OrderResponse>.ErrorResult("ORDER_NOT_FOUND", "سفارش یافت نشد.");
+
+        return ApiResponse<OrderResponse>.SuccessResult(MapToResponse(order));
     }
 
-    public async Task<ApiResponse<IEnumerable<OrderResponse>>> GetOrdersAsync(int page = 1, int pageSize = 20, MobileOrderStatus? status = null)
+    public async Task<ApiResponse<IEnumerable<OrderResponse>>> GetOrdersAsync(
+        int page = 1,
+        int pageSize = 20,
+        MobileOrderStatus? status = null,
+        CancellationToken cancellationToken = default)
     {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
         var orders = await _orderRepository.GetAllAsync(page, pageSize, status);
-        var response = orders.Select(MapToResponse);
+        var response = orders.Select(MapToResponse).ToList();
+
         return ApiResponse<IEnumerable<OrderResponse>>.SuccessResult(response);
     }
 
-    private OrderResponse MapToResponse(MobileOrder order)
+    private static OrderResponse MapToResponse(MobileOrder order)
     {
         return new OrderResponse
         {
@@ -202,9 +249,12 @@ public class OrderService : IOrderService
             LastName = order.LastName,
             Mobile = order.Mobile,
             Address = order.Address,
+            PaymentDate = order.PaymentDate,
             PaymentAmount = order.PaymentAmount,
             TotalAmount = order.Items.Sum(i => i.TotalPrice),
             Status = order.Status,
+            TarafId = order.TarafId,
+            SanadId = order.SanadId,
             CreatedAt = order.CreatedAt,
             Items = order.Items.Select(i => new OrderItemResponse
             {
