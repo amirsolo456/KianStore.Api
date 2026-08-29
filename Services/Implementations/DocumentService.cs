@@ -86,6 +86,18 @@ public sealed class DocumentService : IDocumentService
             }
         }
 
+        var userCashbox = await _context.Users
+            .AsNoTracking()
+            .Where(x => x.Id == request.IdMasool)
+            .Select(x => new { x.IdSandogh, x.IdSandoghType })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (userCashbox == null)
+            throw new ApiException(404, "USER_NOT_FOUND", "کاربر مسئول سند یافت نشد.");
+
+        if (userCashbox.IdSandogh <= 0 || userCashbox.IdSandoghType <= 0)
+            throw new ApiException(409, "INVALID_USER_CASHBOX", "برای کاربر مسئول سند، صندوق/حساب معتبر تنظیم نشده است.");
+
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         var sanadId = await GenerateSanadIdAsync(request.IdSal, cancellationToken);
@@ -139,8 +151,8 @@ public sealed class DocumentService : IDocumentService
             ShowInFaktor = true,
             TasviehDate = request.SabtDate,
             IsTasviehDate = false,
-            IDSandogh = 0,
-            IDSandoghType = 0,
+            IDSandogh = userCashbox.IdSandogh,
+            IDSandoghType = userCashbox.IdSandoghType,
             MabKart = 0,
             MabFish = 0,
             IDKart = 0,
@@ -198,7 +210,7 @@ public sealed class DocumentService : IDocumentService
             MabBonKart = 0,
             MabBonKartTakhfif = 0,
             Takhfif1 = 0,
-            IDTarafTahator = 0,
+            IDTarafTahator = request.IdTaraf,
             TasviehRozSum = null,
             IDSanadAtf = null,
             MabFroshCalNaghd = null,
@@ -296,6 +308,7 @@ public sealed class DocumentService : IDocumentService
         await transaction.CommitAsync(cancellationToken);
 
         var response = Map(sanad, details);
+
         if (stockWarnings.Count > 0)
         {
             return ApiResponse<DocumentResponse>.SuccessWithWarningResult(
