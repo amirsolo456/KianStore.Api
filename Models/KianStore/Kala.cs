@@ -41,4 +41,8 @@ public class Kala
 
     [Column("Quantity")]
     public double Quantity { get; set; }
+
+    [Column("Barcode")]
+    [StringLength(30)]
+    public string Barcode { get; set; } = string.Empty;
 }
