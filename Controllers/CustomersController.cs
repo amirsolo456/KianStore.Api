@@ -16,6 +16,16 @@ public class CustomersController : ControllerBase
         _customerService = customerService;
     }
 
+    [HttpGet]
+    public async Task<ActionResult<ApiResponse<IEnumerable<CustomerResponse>>>> SearchCustomers(
+        [FromQuery] string? search = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        var result = await _customerService.SearchAsync(search?.Trim() ?? string.Empty, page, pageSize);
+        return Ok(result);
+    }
+
     [HttpGet("by-mobile/{mobile}")]
     public async Task<ActionResult<ApiResponse<CustomerResponse>>> GetCustomerByMobile(string mobile)
     {
