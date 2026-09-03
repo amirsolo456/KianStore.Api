@@ -17,5 +17,7 @@ public interface IDocumentService
     Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(
         int idSal,
         int sanadType = 12,
+        int page = 1,
+        int pageSize = 30,
         CancellationToken cancellationToken = default);
 }
