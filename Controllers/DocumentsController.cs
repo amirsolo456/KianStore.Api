@@ -26,9 +26,6 @@ public sealed class DocumentsController : ControllerBase
         if (!result.Success || result.Data == null)
             return StatusCode(201, result);
 
-        // Do not return the in-memory object directly. Read the exact persisted
-        // document and its details back from SQL so the client receives what was
-        // actually stored in Sanad/SanadDetail.
         var persisted = await _documentService.GetAsync(
             result.Data.IdSal,
             result.Data.Id,
@@ -51,6 +48,16 @@ public sealed class DocumentsController : ControllerBase
             Warnings = result.Warnings,
             TraceId = result.TraceId
         });
+    }
+
+    [HttpGet("history")]
+    public async Task<IActionResult> History(
+        [FromQuery] int idSal,
+        [FromQuery] int sanadType = 12,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _documentService.GetHistoryAsync(idSal, sanadType, cancellationToken);
+        return Ok(result);
     }
 
     [HttpGet("{idSal:int}/{id}")]
