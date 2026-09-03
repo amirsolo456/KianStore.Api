@@ -40,11 +40,39 @@ public class CustomerService : ICustomerService
 
     public async Task<ApiResponse<CustomerResponse>> CreateCustomerAsync(CreateCustomerRequest request)
     {
-        if (await _customerRepository.ExistsByMobileAsync(request.Mobile))
+        if (request.PersonType is not (1 or 2))
+        {
+            return ApiResponse<CustomerResponse>.ErrorResult(
+                "INVALID_PERSON_TYPE",
+                "نوع شخص معتبر نیست.");
+        }
+
+        var mobile = request.Mobile?.Trim();
+        if (string.IsNullOrWhiteSpace(mobile))
+        {
+            return ApiResponse<CustomerResponse>.ErrorResult(
+                "INVALID_MOBILE",
+                "شماره موبایل الزامی است.");
+        }
+
+        if (await _customerRepository.ExistsByMobileAsync(mobile))
         {
             return ApiResponse<CustomerResponse>.ErrorResult(
                 "DUPLICATE_MOBILE",
                 "این شماره موبایل قبلاً ثبت شده است.");
+        }
+
+        var name = request.PersonType == 2
+            ? request.CompanyName?.Trim()
+            : $"{request.FirstName?.Trim()} {request.LastName?.Trim()}".Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return ApiResponse<CustomerResponse>.ErrorResult(
+                "INVALID_NAME",
+                request.PersonType == 2
+                    ? "نام شرکت/فروشگاه الزامی است."
+                    : "نام و نام خانوادگی الزامی است.");
         }
 
         var nextId = await _customerRepository.GetNextIdAsync();
@@ -52,10 +80,11 @@ public class CustomerService : ICustomerService
         var taraf = new Taraf
         {
             Id = nextId,
-            IdType = 1,
-            Name = $"{request.FirstName} {request.LastName}".Trim(),
-            Mobile = request.Mobile,
-            Address = request.Address,
+            IdType = request.PersonType,
+            Name = name,
+            Mobile = mobile,
+            Phone = request.Phone?.Trim(),
+            Address = request.Address?.Trim(),
             IsBuyer = true,
             IsDisabled = false
         };
