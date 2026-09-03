@@ -19,9 +19,11 @@ public class ProductsController : ControllerBase
 
     /// <summary>
     /// دریافت و جستجوی کالاهای قابل استفاده.
+    /// جستجو فقط بر اساس ID و KalaName انجام می‌شود.
+    /// در حالت بدون عبارت جستجو، تمام کالاهای فعال برگردانده می‌شوند.
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Kala>>> GetProducts(
+    public async Task<ActionResult<ApiResponse<IEnumerable<Kala>>>> GetProducts(
         [FromQuery] string? search,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -40,27 +42,42 @@ public class ProductsController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            search = search.Trim();
-            var pSearch = search.ToPersianChars();
-            var aSearch = search.ToArabicChars();
+            search = search
+                .Trim()
+                .Replace("ي", "ی")
+                .Replace("ى", "ی")
+                .Replace("ك", "ک")
+                .Replace("ۀ", "ه")
+                .Replace("ة", "ه")
+                .Replace("‌", " ");
 
             query = query.Where(x =>
-                (x.Id != null && x.Id.Contains(search)) ||
-                (x.KalaName != null && (x.KalaName.Contains(pSearch) || x.KalaName.Contains(aSearch))) ||
-                (x.Barcode != null && x.Barcode.Contains(search)));
+                x.Id.Contains(search) ||
+                x.KalaName
+                    .Replace("ي", "ی")
+                    .Replace("ى", "ی")
+                    .Replace("ك", "ک")
+                    .Replace("ۀ", "ه")
+                    .Replace("ة", "ه")
+                    .Replace("‌", " ")
+                    .Contains(search));
         }
 
-        var products = await query
-            .OrderBy(x => x.KalaName)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
+        var products = string.IsNullOrWhiteSpace(search)
+            ? await query
+                .OrderBy(x => x.KalaName)
+                .ToListAsync(cancellationToken)
+            : await query
+                .OrderBy(x => x.KalaName)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
 
-        return Ok(products);
+        return Ok(ApiResponse<IEnumerable<Kala>>.SuccessResult(products));
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<Kala>> GetProduct(
+    public async Task<ActionResult<ApiResponse<Kala>>> GetProduct(
         string id,
         CancellationToken cancellationToken)
     {
@@ -69,8 +86,12 @@ public class ProductsController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (product == null)
-            return NotFound();
+        {
+            return NotFound(ApiResponse<Kala>.ErrorResult(
+                "PRODUCT_NOT_FOUND",
+                "کالا یافت نشد."));
+        }
 
-        return Ok(product);
+        return Ok(ApiResponse<Kala>.SuccessResult(product));
     }
 }
