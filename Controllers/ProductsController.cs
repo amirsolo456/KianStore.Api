@@ -19,6 +19,7 @@ public class ProductsController : ControllerBase
 
     /// <summary>
     /// دریافت و جستجوی کالاهای قابل استفاده.
+    /// جستجو فقط بر اساس ID و KalaName انجام می‌شود.
     /// در حالت بدون عبارت جستجو، تمام کالاهای فعال برگردانده می‌شوند.
     /// </summary>
     [HttpGet]
@@ -52,8 +53,14 @@ public class ProductsController : ControllerBase
 
             query = query.Where(x =>
                 x.Id.Contains(search) ||
-                x.KalaName.Replace("ي", "ی").Replace("ى", "ی").Replace("ك", "ک").Replace("ۀ", "ه").Replace("ة", "ه").Contains(search) ||
-                x.Barcode.Contains(search));
+                x.KalaName
+                    .Replace("ي", "ی")
+                    .Replace("ى", "ی")
+                    .Replace("ك", "ک")
+                    .Replace("ۀ", "ه")
+                    .Replace("ة", "ه")
+                    .Replace("‌", " ")
+                    .Contains(search));
         }
 
         var products = string.IsNullOrWhiteSpace(search)
