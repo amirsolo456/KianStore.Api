@@ -71,11 +71,7 @@ public sealed class DocumentService : IDocumentService
             if (!item.IsIncoming && request.CheckStock)
             {
                 var stock = await _stockService.CheckAsync(
-                    item.IdKala,
-                    item.Quantity,
-                    request.IdAnbar,
-                    request.IdSal,
-                    cancellationToken);
+                    item.IdKala, item.Quantity, request.IdAnbar, request.IdSal, cancellationToken);
 
                 if (!stock.IsAvailable)
                 {
@@ -83,12 +79,8 @@ public sealed class DocumentService : IDocumentService
                     {
                         code = "INSUFFICIENT_STOCK",
                         message = $"موجودی کالای {item.IdKala} کافی نیست.",
-                        stock.KalaId,
-                        stock.IdAnbar,
-                        stock.IdSal,
-                        stock.Requested,
-                        stock.Available,
-                        stock.IsAvailable
+                        stock.KalaId, stock.IdAnbar, stock.IdSal,
+                        stock.Requested, stock.Available, stock.IsAvailable
                     });
                 }
             }
@@ -306,17 +298,10 @@ public sealed class DocumentService : IDocumentService
         var response = Map(sanad, details);
 
         if (stockWarnings.Count > 0)
-        {
-            return ApiResponse<DocumentResponse>.SuccessWithWarningResult(
-                response,
-                stockWarnings,
-                "سند ثبت شد، اما موجودی یک یا چند کالا کافی نبود.",
-                "STOCK_WARNING");
-        }
+            return ApiResponse<DocumentResponse>.SuccessWithWarningResult(response, stockWarnings,
+                "سند ثبت شد، اما موجودی یک یا چند کالا کافی نبود.", "STOCK_WARNING");
 
-        return ApiResponse<DocumentResponse>.SuccessResult(
-            response,
-            "سند با موفقیت ثبت شد.");
+        return ApiResponse<DocumentResponse>.SuccessResult(response, "سند با موفقیت ثبت شد.");
     }
 
     public async Task<ApiResponse<DocumentResponse>> GetAsync(
@@ -335,7 +320,54 @@ public sealed class DocumentService : IDocumentService
             .OrderBy(x => x.Id2)
             .ToListAsync(cancellationToken);
 
-        return ApiResponse<DocumentResponse>.SuccessResult(Map(sanad, details));
+        var tarafName = await _context.Tarafs.AsNoTracking()
+            .Where(x => x.Id == sanad.IdTaraf && x.IdType == sanad.IdTarafType)
+            .Select(x => x.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return ApiResponse<DocumentResponse>.SuccessResult(Map(sanad, details, tarafName));
+    }
+
+    public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(
+        int idSal,
+        int sanadType = 12,
+        CancellationToken cancellationToken = default)
+    {
+        var sanads = await _context.Sanads.AsNoTracking()
+            .Where(x => x.IdSal == idSal && x.SanadType == sanadType && !x.Disable)
+            .OrderByDescending(x => x.IdFaktor)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (sanads.Count == 0)
+            return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(
+                Array.Empty<DocumentResponse>(), "تاریخچه سندی ندارد.");
+
+        var sanadIds = sanads.Select(x => x.Id).ToList();
+        var details = await _context.SanadDetails.AsNoTracking()
+            .Where(x => x.IdSal == idSal && sanadIds.Contains(x.IdSanad))
+            .OrderBy(x => x.IdSanad)
+            .ThenBy(x => x.Id2)
+            .ToListAsync(cancellationToken);
+
+        var tarafKeys = sanads
+            .Select(x => new { x.IdTaraf, x.IdTarafType })
+            .Distinct()
+            .ToList();
+
+        var tarafs = await _context.Tarafs.AsNoTracking()
+            .Where(x => x.IdType != 0 && tarafKeys.Select(k => k.IdTaraf).Contains(x.Id))
+            .ToListAsync(cancellationToken);
+
+        var detailLookup = details.ToLookup(x => x.IdSanad);
+        var result = sanads.Select(s =>
+        {
+            var tarafName = tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name;
+            return Map(s, detailLookup[s.Id].ToList(), tarafName);
+        }).ToList();
+
+        return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(result,
+            "تاریخچه اسناد با موفقیت دریافت شد.");
     }
 
     private async Task<string> GenerateSanadIdAsync(int idSal, CancellationToken cancellationToken)
@@ -360,11 +392,12 @@ public sealed class DocumentService : IDocumentService
     }
 
     private static long ParseNumeric(string value)
-    {
-        return long.TryParse(value, out var number) ? number : 0;
-    }
+        => long.TryParse(value, out var number) ? number : 0;
 
-    private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details)
+    private static DocumentResponse Map(
+        Sanad sanad,
+        IReadOnlyCollection<SanadDetail> details,
+        string? tarafName = null)
     {
         return new DocumentResponse
         {
@@ -379,6 +412,7 @@ public sealed class DocumentService : IDocumentService
             TotalAmount = sanad.MabKol,
             IsFinal = sanad.IsFinal,
             Description = sanad.Des,
+            TarafName = tarafName,
             Items = details.Select(x => new DocumentItemResponse
             {
                 Id2 = x.Id2,
