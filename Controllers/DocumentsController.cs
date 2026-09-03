@@ -1,3 +1,4 @@
+using KianStore.Api.Common;
 using KianStore.Api.DTOs.Documents;
 using KianStore.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
@@ -21,7 +22,35 @@ public sealed class DocumentsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _documentService.CreateAsync(request, cancellationToken);
-        return StatusCode(201, result);
+
+        if (!result.Success || result.Data == null)
+            return StatusCode(201, result);
+
+        // Do not return the in-memory object directly. Read the exact persisted
+        // document and its details back from SQL so the client receives what was
+        // actually stored in Sanad/SanadDetail.
+        var persisted = await _documentService.GetAsync(
+            result.Data.IdSal,
+            result.Data.Id,
+            cancellationToken);
+
+        if (!persisted.Success || persisted.Data == null)
+        {
+            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult(
+                "DOCUMENT_RESPONSE_LOAD_FAILED",
+                "سند ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود."));
+        }
+
+        return StatusCode(201, new ApiResponse<DocumentResponse>
+        {
+            Success = true,
+            Code = result.Code,
+            Message = result.Message,
+            Data = persisted.Data,
+            Errors = result.Errors,
+            Warnings = result.Warnings,
+            TraceId = result.TraceId
+        });
     }
 
     [HttpGet("{idSal:int}/{id}")]
