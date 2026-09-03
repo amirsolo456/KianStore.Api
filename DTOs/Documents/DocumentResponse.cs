@@ -13,6 +13,7 @@ public sealed class DocumentResponse
     public decimal TotalAmount { get; init; }
     public bool IsFinal { get; init; }
     public string? Description { get; init; }
+    public string? TarafName { get; init; }
     public List<DocumentItemResponse> Items { get; init; } = new();
 }
 
