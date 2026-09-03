@@ -1,3 +1,4 @@
+using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.Models.KianStore;
 using Microsoft.AspNetCore.Mvc;
@@ -40,10 +41,13 @@ public class ProductsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(search))
         {
             search = search.Trim();
+            var pSearch = search.ToPersianChars();
+            var aSearch = search.ToArabicChars();
+
             query = query.Where(x =>
-                x.Id.Contains(search) ||
-                x.KalaName.Contains(search) ||
-                x.Barcode.Contains(search));
+                (x.Id != null && x.Id.Contains(search)) ||
+                (x.KalaName != null && (x.KalaName.Contains(pSearch) || x.KalaName.Contains(aSearch))) ||
+                (x.Barcode != null && x.Barcode.Contains(search)));
         }
 
         var products = await query

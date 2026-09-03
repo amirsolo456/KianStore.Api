@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.Models.KianStore;
 using KianStore.Api.Repositories.Interfaces;
@@ -21,7 +22,7 @@ public class CustomerRepository : ICustomerRepository
             .AsNoTracking()
             .FirstOrDefaultAsync(t =>
                 !t.IsDisabled &&
-                (t.Mobile == mobile || t.Phone == mobile));
+                ((t.Mobile != null && t.Mobile == mobile) || (t.Phone != null && t.Phone == mobile)));
     }
 
     public async Task<Taraf?> GetByIdAsync(int id)
@@ -43,11 +44,15 @@ public class CustomerRepository : ICustomerRepository
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            var pSearch = search.ToPersianChars();
+            var aSearch = search.ToArabicChars();
+            bool isNumeric = int.TryParse(search, out int idSearch);
+
             query = query.Where(t =>
-                t.Name.Contains(search) ||
-                (t.Mobile != null && t.Mobile.Contains(search)) ||
-                (t.Phone != null && t.Phone.Contains(search)) ||
-                t.Id.ToString().Contains(search));
+                (t.Name != null && (t.Name.Contains(pSearch) || t.Name.Contains(aSearch))) ||
+                (t.Mobile != null && t.Mobile.Contains(pSearch)) ||
+                (t.Phone != null && t.Phone.Contains(pSearch)) ||
+                (isNumeric && t.Id == idSearch));
         }
 
         return await query
@@ -69,7 +74,8 @@ public class CustomerRepository : ICustomerRepository
     {
         mobile = mobile.Trim();
         return await _context.Tarafs.AnyAsync(t =>
-            t.Mobile == mobile || t.Phone == mobile);
+            !t.IsDisabled &&
+            ((t.Mobile != null && t.Mobile == mobile) || (t.Phone != null && t.Phone == mobile)));
     }
 
     public async Task<int> GetNextIdAsync()
