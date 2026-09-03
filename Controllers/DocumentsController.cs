@@ -26,10 +26,7 @@ public sealed class DocumentsController : ControllerBase
         if (!result.Success || result.Data == null)
             return StatusCode(201, result);
 
-        var persisted = await _documentService.GetAsync(
-            result.Data.IdSal,
-            result.Data.Id,
-            cancellationToken);
+        var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, cancellationToken);
 
         if (!persisted.Success || persisted.Data == null)
         {
@@ -54,9 +51,11 @@ public sealed class DocumentsController : ControllerBase
     public async Task<IActionResult> History(
         [FromQuery] int idSal,
         [FromQuery] int sanadType = 12,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 30,
         CancellationToken cancellationToken = default)
     {
-        var result = await _documentService.GetHistoryAsync(idSal, sanadType, cancellationToken);
+        var result = await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, cancellationToken);
         return Ok(result);
     }
 
