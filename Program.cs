@@ -27,6 +27,18 @@ builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IStockService, StockService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 
+// Allow the Flutter Web client to call the API from a different origin.
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FlutterWeb", policy =>
+    {
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -44,6 +56,7 @@ else
     app.UseHttpsRedirection();
 }
 
+app.UseCors("FlutterWeb");
 app.UseAuthorization();
 app.MapControllers();
 
