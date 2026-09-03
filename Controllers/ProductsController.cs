@@ -41,10 +41,18 @@ public class ProductsController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            search = search.Trim();
+            search = search
+                .Trim()
+                .Replace("ي", "ی")
+                .Replace("ى", "ی")
+                .Replace("ك", "ک")
+                .Replace("ۀ", "ه")
+                .Replace("ة", "ه")
+                .Replace("‌", " ");
+
             query = query.Where(x =>
                 x.Id.Contains(search) ||
-                x.KalaName.Contains(search) ||
+                x.KalaName.Replace("ي", "ی").Replace("ى", "ی").Replace("ك", "ک").Replace("ۀ", "ه").Replace("ة", "ه").Contains(search) ||
                 x.Barcode.Contains(search));
         }
 
