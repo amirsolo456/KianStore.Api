@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.UseUrls("http://0.0.0.0:5069");
+
 builder.Services.AddControllers();
 
 var connectionString = builder.Configuration.GetConnectionString("KianStore")
