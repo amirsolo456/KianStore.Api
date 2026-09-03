@@ -12,11 +12,16 @@ public sealed class DocumentService : IDocumentService
 {
     private readonly KianStoreDbContext _context;
     private readonly IStockService _stockService;
+    private readonly ILogger<DocumentService> _logger;
 
-    public DocumentService(KianStoreDbContext context, IStockService stockService)
+    public DocumentService(
+        KianStoreDbContext context,
+        IStockService stockService,
+        ILogger<DocumentService> logger)
     {
         _context = context;
         _stockService = stockService;
+        _logger = logger;
     }
 
     public async Task<ApiResponse<DocumentResponse>> CreateAsync(
@@ -153,7 +158,7 @@ public sealed class DocumentService : IDocumentService
             MabFish = 0,
             IDKart = 0,
             IDTypeKart = 0,
-            IsFinal = false,
+            IsFinal = true,
             IDFroshMabType = 0,
             SanadTime = DateTime.Now.ToString("HH:mm:ss"),
             TakhfifKala1 = false,
@@ -176,7 +181,7 @@ public sealed class DocumentService : IDocumentService
             MabEzafDarsad = 0,
             MabEzafOnvan = null,
             SefareshID = null,
-            IsSavedFinal = false,
+            IsSavedFinal = true,
             IDSanad = 0,
             Takhfif3 = 0,
             TakhfifKala = 0,
@@ -260,6 +265,7 @@ public sealed class DocumentService : IDocumentService
                 SanadType = request.SanadType,
                 PropKala = null,
                 PropKala2 = null,
+                Des = item.Description,
                 Des1 = null,
                 Des2 = null,
                 Des3 = null,
@@ -301,6 +307,32 @@ public sealed class DocumentService : IDocumentService
         _context.Sanads.Add(sanad);
         _context.SanadDetails.AddRange(details);
         await _context.SaveChangesAsync(cancellationToken);
+
+        var persistedSanad = await _context.Sanads
+            .AsNoTracking()
+            .AnyAsync(x => x.IdSal == request.IdSal && x.Id == sanadId, cancellationToken);
+        var persistedDetails = await _context.SanadDetails
+            .AsNoTracking()
+            .CountAsync(x => x.IdSal == request.IdSal && x.IdSanad == sanadId, cancellationToken);
+
+        _logger.LogInformation(
+            "Document persistence verification: Database={Database}, Server={Server}, IdSal={IdSal}, SanadId={SanadId}, SanadType={SanadType}, SanadExists={SanadExists}, DetailCount={DetailCount}",
+            _context.Database.GetDbConnection().Database,
+            _context.Database.GetDbConnection().DataSource,
+            request.IdSal,
+            sanadId,
+            request.SanadType,
+            persistedSanad,
+            persistedDetails);
+
+        if (!persistedSanad || persistedDetails != details.Count)
+        {
+            throw new ApiException(
+                500,
+                "DOCUMENT_PERSISTENCE_VERIFICATION_FAILED",
+                "سند ذخیره شد ولی بررسی مجدد اطلاعات آن در پایگاه داده موفق نبود.");
+        }
+
         await transaction.CommitAsync(cancellationToken);
 
         var response = Map(sanad, details);
