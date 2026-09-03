@@ -1,3 +1,4 @@
+using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.Models.KianStore;
 using Microsoft.AspNetCore.Mvc;
@@ -18,9 +19,10 @@ public class ProductsController : ControllerBase
 
     /// <summary>
     /// دریافت و جستجوی کالاهای قابل استفاده.
+    /// در حالت بدون عبارت جستجو، تمام کالاهای فعال برگردانده می‌شوند.
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Kala>>> GetProducts(
+    public async Task<ActionResult<ApiResponse<IEnumerable<Kala>>>> GetProducts(
         [FromQuery] string? search,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -46,17 +48,21 @@ public class ProductsController : ControllerBase
                 x.Barcode.Contains(search));
         }
 
-        var products = await query
-            .OrderBy(x => x.KalaName)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
+        var products = string.IsNullOrWhiteSpace(search)
+            ? await query
+                .OrderBy(x => x.KalaName)
+                .ToListAsync(cancellationToken)
+            : await query
+                .OrderBy(x => x.KalaName)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
 
-        return Ok(products);
+        return Ok(ApiResponse<IEnumerable<Kala>>.SuccessResult(products));
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<Kala>> GetProduct(
+    public async Task<ActionResult<ApiResponse<Kala>>> GetProduct(
         string id,
         CancellationToken cancellationToken)
     {
@@ -65,8 +71,12 @@ public class ProductsController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (product == null)
-            return NotFound();
+        {
+            return NotFound(ApiResponse<Kala>.ErrorResult(
+                "PRODUCT_NOT_FOUND",
+                "کالا یافت نشد."));
+        }
 
-        return Ok(product);
+        return Ok(ApiResponse<Kala>.SuccessResult(product));
     }
 }
