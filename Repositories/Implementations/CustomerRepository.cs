@@ -1,3 +1,4 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using KianStore.Api.Common;
 using KianStore.Api.Data;
@@ -29,7 +30,7 @@ public class CustomerRepository : ICustomerRepository
     {
         return await _context.Tarafs
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == id && !t.IsDisabled);
+            .FirstOrDefaultAsync(t => t.Id == id && t.IdType == 2 && !t.IsDisabled);
     }
 
     public async Task<List<Taraf>> SearchAsync(string search, int page = 1, int pageSize = 50)
@@ -40,7 +41,7 @@ public class CustomerRepository : ICustomerRepository
 
         var query = _context.Tarafs
             .AsNoTracking()
-            .Where(t => !t.IsDisabled);
+            .Where(t => !t.IsDisabled && t.IdType == 2);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -65,9 +66,55 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<Taraf> CreateAsync(Taraf taraf)
     {
-        _context.Tarafs.Add(taraf);
-        await _context.SaveChangesAsync();
-        return taraf;
+        // Taraf is a legacy table with many required columns and business defaults.
+        // The existing AndAddTaraf procedure is the canonical creation path and
+        // populates those fields exactly as the desktop KianStore application does.
+        var name = taraf.Name.Trim();
+        var phone = taraf.Phone?.Trim() ?? string.Empty;
+        var mobile = taraf.Mobile?.Trim() ?? string.Empty;
+        var address = taraf.Address?.Trim() ?? string.Empty;
+
+        var nameParameter = new SqlParameter("@name", System.Data.SqlDbType.VarChar, 50) { Value = name };
+        var tellParameter = new SqlParameter("@tell", System.Data.SqlDbType.VarChar, 50) { Value = phone };
+        var mobileParameter = new SqlParameter("@mobile", System.Data.SqlDbType.VarChar, 70) { Value = mobile };
+        var addressParameter = new SqlParameter("@addr", System.Data.SqlDbType.VarChar, 200) { Value = address };
+        var gpsLatParameter = new SqlParameter("@GpsLat", System.Data.SqlDbType.Float) { Value = 0d };
+        var gpsLongParameter = new SqlParameter("@GpsLong", System.Data.SqlDbType.Float) { Value = 0d };
+        var newIdParameter = new SqlParameter("@newIDTaraf", System.Data.SqlDbType.Int)
+        {
+            Direction = System.Data.ParameterDirection.InputOutput,
+            Value = 0
+        };
+        var idMasirParameter = new SqlParameter("@IDMasir", System.Data.SqlDbType.Int) { Value = 0 };
+        var codeMelliParameter = new SqlParameter("@CodeMelli", System.Data.SqlDbType.VarChar, 30) { Value = string.Empty };
+        var codeEghtesadiParameter = new SqlParameter("@CodeEghtesadi", System.Data.SqlDbType.VarChar, 50) { Value = string.Empty };
+        var idUserParameter = new SqlParameter("@IDUser", System.Data.SqlDbType.Int) { Value = 0 };
+
+        await _context.Database.ExecuteSqlRawAsync(
+            "EXEC dbo.AndAddTaraf @name, @tell, @mobile, @addr, @GpsLat, @GpsLong, @newIDTaraf OUTPUT, @IDMasir, @CodeMelli, @CodeEghtesadi, @IDUser",
+            nameParameter,
+            tellParameter,
+            mobileParameter,
+            addressParameter,
+            gpsLatParameter,
+            gpsLongParameter,
+            newIdParameter,
+            idMasirParameter,
+            codeMelliParameter,
+            codeEghtesadiParameter,
+            idUserParameter);
+
+        var newId = (int)newIdParameter.Value;
+        var created = await _context.Tarafs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == newId && t.IdType == 2);
+
+        if (created == null)
+        {
+            throw new InvalidOperationException("مشتری ایجاد شد اما رکورد ایجادشده از جدول Taraf قابل بازیابی نیست.");
+        }
+
+        return created;
     }
 
     public async Task<bool> ExistsByMobileAsync(string mobile)
@@ -75,14 +122,12 @@ public class CustomerRepository : ICustomerRepository
         mobile = mobile.Trim();
         return await _context.Tarafs.AnyAsync(t =>
             !t.IsDisabled &&
+            t.IdType == 2 &&
             ((t.Mobile != null && t.Mobile == mobile) || (t.Phone != null && t.Phone == mobile)));
     }
 
     public async Task<int> GetNextIdAsync()
     {
-        // Taraf IDs are shared by business logic but the existing database uses
-        // IDType=2 for customers. Generate the next ID from customer records only,
-        // matching the legacy AndAddTaraf procedure.
         var maxId = await _context.Tarafs
             .Where(t => t.IdType == 2)
             .MaxAsync(t => (int?)t.Id) ?? 0;
