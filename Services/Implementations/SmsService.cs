@@ -151,32 +151,35 @@ public sealed class SmsService
         string message,
         CancellationToken ct)
     {
-        var provider = (_configuration["Sms:Provider"] ?? "Kavenegar").Trim();
+        const string providerName = "Kavenegar";
+        var provider = (_configuration["Sms:Provider"] ?? providerName).Trim();
         var apiKey = _configuration["Sms:ApiKey"]?.Trim();
         var sender = _configuration["Sms:Sender"]?.Trim();
         var configuredUrl = _configuration["Sms:SendUrl"]?.Trim();
 
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("کلید API کاوه‌نگار تنظیم نشده است. مقدار Sms:ApiKey را در سرور تنظیم کنید.");
-        if (string.IsNullOrWhiteSpace(sender))
-            throw new InvalidOperationException("شماره فرستنده پیامک تنظیم نشده است. مقدار Sms:Sender را در سرور تنظیم کنید.");
-
-        var client = _httpClientFactory.CreateClient("SmsProvider");
-
-        if (provider.Equals("Kavenegar", StringComparison.OrdinalIgnoreCase))
+        if (provider.Equals(providerName, StringComparison.OrdinalIgnoreCase))
         {
+            if (string.IsNullOrWhiteSpace(apiKey))
+                throw new InvalidOperationException("کلید API کاوه‌نگار تنظیم نشده است. مقدار Sms:ApiKey را در Environment یا تنظیمات سرور قرار دهید.");
+
             var url = !string.IsNullOrWhiteSpace(configuredUrl)
                 ? configuredUrl
                 : $"https://api.kavenegar.com/v1/{Uri.EscapeDataString(apiKey)}/sms/send.json";
 
+            var values = new Dictionary<string, string>
+            {
+                ["receptor"] = mobile,
+                ["message"] = message
+            };
+
+            // sender در کاوه‌نگار می‌تواند از پنل پیش‌فرض استفاده کند؛ فقط در صورت تنظیم ارسال می‌شود.
+            if (!string.IsNullOrWhiteSpace(sender))
+                values["sender"] = sender;
+
+            var client = _httpClientFactory.CreateClient("SmsProvider");
             using var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
-                Content = new FormUrlEncodedContent(new Dictionary<string, string>
-                {
-                    ["receptor"] = mobile,
-                    ["sender"] = sender,
-                    ["message"] = message
-                })
+                Content = new FormUrlEncodedContent(values)
             };
 
             using var response = await client.SendAsync(request, ct);
@@ -204,14 +207,21 @@ public sealed class SmsService
                     throw new InvalidOperationException($"کاوه‌نگار: {apiMessage} (کد {apiStatus})");
 
                 string? messageId = null;
-                if (root.TryGetProperty("entries", out var entries) && entries.ValueKind == JsonValueKind.Array && entries.GetArrayLength() > 0)
+                if (root.TryGetProperty("entries", out var entries))
                 {
-                    var first = entries[0];
-                    if (first.TryGetProperty("messageid", out var idNode))
+                    if (entries.ValueKind == JsonValueKind.Array && entries.GetArrayLength() > 0)
+                    {
+                        var first = entries[0];
+                        if (first.TryGetProperty("messageid", out var idNode))
+                            messageId = idNode.ToString();
+                    }
+                    else if (entries.ValueKind == JsonValueKind.Object && entries.TryGetProperty("messageid", out var idNode))
+                    {
                         messageId = idNode.ToString();
+                    }
                 }
 
-                return ("Kavenegar", messageId);
+                return (providerName, messageId);
             }
             catch (JsonException ex)
             {
@@ -219,9 +229,12 @@ public sealed class SmsService
             }
         }
 
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("ApiKey برای سرویس پیامک تنظیم نشده است.");
         if (string.IsNullOrWhiteSpace(configuredUrl))
             throw new InvalidOperationException("SendUrl برای سرویس پیامک تنظیم نشده است.");
 
+        var genericClient = _httpClientFactory.CreateClient("SmsProvider");
         using var genericRequest = new HttpRequestMessage(HttpMethod.Post, configuredUrl);
         genericRequest.Headers.TryAddWithoutValidation("X-Api-Key", apiKey);
         genericRequest.Content = System.Net.Http.Json.JsonContent.Create(new
@@ -231,7 +244,7 @@ public sealed class SmsService
             sender
         });
 
-        using var genericResponse = await client.SendAsync(genericRequest, ct);
+        using var genericResponse = await genericClient.SendAsync(genericRequest, ct);
         var genericBody = await genericResponse.Content.ReadAsStringAsync(ct);
         if (!genericResponse.IsSuccessStatusCode)
             throw new InvalidOperationException($"پاسخ پنل پیامک ناموفق بود: {(int)genericResponse.StatusCode} {genericBody}");
