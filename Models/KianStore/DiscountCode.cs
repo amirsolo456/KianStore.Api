@@ -10,6 +10,9 @@ public sealed class DiscountCode
     public string Code { get; set; } = null!;
     public string? Title { get; set; }
     public int TakhfifId { get; set; }
+    public int Type { get; set; }
+    public decimal Value { get; set; }
+    public decimal? MaxDiscountAmount { get; set; }
     public int? UsageLimit { get; set; }
     public int UsedCount { get; set; }
     public int? PerCustomerLimit { get; set; }
