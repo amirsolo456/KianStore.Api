@@ -21,15 +21,15 @@ function Test-Get($Path) {
 
 $paths = @(
     '/api/health',
-    '/api/products?page=1&pageSize=5',
-    '/api/customers?page=1&pageSize=5',
+    '/api/products?search=&page=1&pageSize=5',
+    '/api/customers?search=&page=1&pageSize=5',
     '/api/reference/warehouses',
     '/api/reference/accounts',
     '/api/reference/parties?page=1&pageSize=5',
     '/api/reference/users',
     '/api/reference/document-types?idSal=1405',
     '/api/stock?page=1&pageSize=5&idAnbar=1&idSal=1405',
-    '/api/discount-codes?activeOnly=true',
+    '/api/discount-codes',
     '/api/sms/status',
     '/api/sms/templates?activeOnly=true'
 )
