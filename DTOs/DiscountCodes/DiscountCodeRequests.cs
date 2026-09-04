@@ -1,6 +1,6 @@
 namespace KianStore.Api.DTOs.DiscountCodes;
 
-public sealed class CreateDiscountCodeRequest
+public class CreateDiscountCodeRequest
 {
     public string Code { get; set; } = null!;
     public string? Title { get; set; }
