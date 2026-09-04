@@ -19,17 +19,22 @@ public sealed class StockRepository : IStockRepository
         int idSal,
         CancellationToken cancellationToken = default)
     {
-        var cachedStock = await _context.KalaDetails
-            .AsNoTracking()
-            .Where(x => x.IdKala == kalaId && x.IdAnbar == idAnbar)
-            .Select(x => (decimal?)x.Quantity)
-            .FirstOrDefaultAsync(cancellationToken);
+        // KalaDetail is a fast cache for the current fiscal year. Historical years
+        // are calculated from SanadDetail so one year's cache cannot leak into another.
+        if (idSal == 1405)
+        {
+            var cachedStock = await _context.KalaDetails
+                .AsNoTracking()
+                .Where(x => x.IdKala == kalaId && x.IdAnbar == idAnbar)
+                .Select(x => (decimal?)x.Quantity)
+                .FirstOrDefaultAsync(cancellationToken);
 
-        if (cachedStock.HasValue)
-            return cachedStock.Value;
+            if (cachedStock.HasValue)
+                return cachedStock.Value;
+        }
 
-        // KianStore recalculates stock from SanadDetail.Bed2 - Bes2.
-        // Excluded document types are 16 and 19, matching the database logic.
+        // KianStore stock = incoming (Bed2) - outgoing (Bes2).
+        // Existing document types 16 and 19 are excluded by the legacy logic.
         var calculatedStock = await _context.SanadDetails
             .AsNoTracking()
             .Where(x =>
