@@ -1,5 +1,5 @@
 param(
-    [int]$Port = 5070
+    [int]$Port = 5000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,10 +22,12 @@ else {
 }
 
 $env:ASPNETCORE_ENVIRONMENT = 'Production'
-$env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
+# Bind to all interfaces so Flutter clients can reach the API from another machine.
+$env:ASPNETCORE_URLS = "http://0.0.0.0:$Port"
 
-Write-Host "Starting KianStore.Api on http://127.0.0.1:$Port" -ForegroundColor Cyan
-Write-Host "Health: http://127.0.0.1:$Port/api/health" -ForegroundColor Cyan
+Write-Host "Starting KianStore.Api on http://0.0.0.0:$Port" -ForegroundColor Cyan
+Write-Host "Health (server): http://127.0.0.1:$Port/api/health" -ForegroundColor Cyan
+Write-Host "Health (network): http://<SERVER-IP>:$Port/api/health" -ForegroundColor Cyan
 
 Set-Location $Root
 if ($UseDotNet) {
