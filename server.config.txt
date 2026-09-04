@@ -1,0 +1,20 @@
+# KianStore.Api - single server configuration file
+# Format: Key=Value
+# Do not put spaces around the first '=' character.
+
+# SQL Server
+ConnectionString=Server=.\SQL2025;Database=KianStore_2;Trusted_Connection=True;TrustServerCertificate=True;
+
+# API
+ApiBindAddress=0.0.0.0
+ApiPort=5000
+PublicBaseUrl=http://95.38.183.66:5000
+
+# CORS - comma separated origins. Leave empty to allow any origin.
+CorsAllowedOrigins=
+
+# SMS
+SmsProvider=HttpSmsProvider
+SmsSendUrl=
+SmsApiKey=
+SmsSender=
