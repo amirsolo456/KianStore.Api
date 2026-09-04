@@ -75,12 +75,16 @@ public class CustomerService : ICustomerService
                     : "نام و نام خانوادگی الزامی است.");
         }
 
+        // Taraf.IDType is the طرف/customer type used by the existing KianStore schema.
+        // Both حقیقی and حقوقی buyers belong to طرف type 2. The UI PersonType is a
+        // presentation-level distinction and must not be written into Taraf.IDType.
+        const int customerTarafType = 2;
         var nextId = await _customerRepository.GetNextIdAsync();
 
         var taraf = new Taraf
         {
             Id = nextId,
-            IdType = request.PersonType,
+            IdType = customerTarafType,
             Name = name,
             Mobile = mobile,
             Phone = request.Phone?.Trim(),
