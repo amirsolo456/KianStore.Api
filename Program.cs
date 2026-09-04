@@ -8,9 +8,6 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Keep the historical 5069 port only for local Development when no explicit URL exists.
-// On Windows Server/IIS the host owns the listener/binding. For a direct production
-// smoke test, ASPNETCORE_URLS can be set explicitly from PowerShell.
 if (builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 {
     builder.WebHost.UseUrls("http://0.0.0.0:5069");
@@ -39,7 +36,10 @@ builder.Services.AddScoped<IStockRepository, StockRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IStockService, StockService>();
+// The legacy Sanad writer is registered last so the existing document controller
+// keeps the same API contract while using the database's canonical procedures.
 builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<IDocumentService, LegacyDocumentService>();
 builder.Services.AddScoped<DiscountCodeService>();
 builder.Services.AddScoped<SmsService>();
 
@@ -54,8 +54,6 @@ builder.Services.AddCors(options => options.AddPolicy("FlutterWeb", policy =>
     }
     else
     {
-        // Native Flutter clients do not send an Origin header. Web deployments
-        // should set Cors:AllowedOrigins explicitly in Production.
         policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
     }
 }));
