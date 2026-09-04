@@ -11,9 +11,13 @@ public sealed class DocumentResponse
     public int IdFaktor { get; init; }
     public string SabtDate { get; init; } = null!;
     public decimal TotalAmount { get; init; }
+    public decimal DiscountAmount { get; init; }
     public bool IsFinal { get; init; }
     public string? Description { get; init; }
     public string? TarafName { get; init; }
+    public string[] ConsumedDiscountCodes { get; init; } = Array.Empty<string>();
+    public string? IssuedNextPurchaseDiscountCode { get; init; }
+    public bool NextPurchaseSmsSent { get; init; }
     public List<DocumentItemResponse> Items { get; init; } = new();
 }
 
