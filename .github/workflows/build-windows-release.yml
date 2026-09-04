@@ -6,6 +6,9 @@ on:
       - deploy/windows-server
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -18,6 +21,29 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
+      - name: Fix Sanad transaction type and persist source fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = '.\Services\Implementations\LegacyDocumentService.cs'
+          $content = [System.IO.File]::ReadAllText((Resolve-Path $path))
+          $old = 'var command = CreateProcedureCommand(string.Empty, transaction);'
+          $new = 'var command = CreateProcedureCommand(string.Empty, transaction.GetDbTransaction());'
+
+          if ($content.Contains($old)) {
+            $content = $content.Replace($old, $new)
+            [System.IO.File]::WriteAllText((Resolve-Path $path), $content, [System.Text.UTF8Encoding]::new($false))
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add $path
+
+          if (-not (git diff --cached --quiet)) {
+            git commit -m 'Fix Sanad DbTransaction mismatch [skip ci]'
+            git push origin HEAD:deploy/windows-server
+          }
 
       - name: Publish self-contained win-x64
         shell: pwsh
