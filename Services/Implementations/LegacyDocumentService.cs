@@ -433,7 +433,7 @@ public sealed class LegacyDocumentService : IDocumentService
         CancellationToken cancellationToken,
         params SqlParameter[] parameters)
     {
-        var command = CreateProcedureCommand(string.Empty, transaction);
+        var command = CreateProcedureCommand(string.Empty, transaction.GetDbTransaction());
         await using (command)
         {
             command.CommandType = CommandType.Text;
