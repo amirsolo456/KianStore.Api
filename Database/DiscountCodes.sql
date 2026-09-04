@@ -120,3 +120,76 @@ BEGIN
     CREATE INDEX IX_SmsLog_CreatedAt ON dbo.SmsLog(CreatedAt DESC);
 END
 GO
+
+/* Existing SMS installations: make the physical schema match the EF model. */
+IF OBJECT_ID(N'dbo.SmsTemplate', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.SmsTemplate', N'UpdatedAt') IS NULL
+        ALTER TABLE dbo.SmsTemplate ADD UpdatedAt datetime2(0) NULL;
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_SmsTemplate_IsActive' AND object_id = OBJECT_ID(N'dbo.SmsTemplate'))
+        CREATE INDEX IX_SmsTemplate_IsActive ON dbo.SmsTemplate(IsActive);
+END
+GO
+
+IF OBJECT_ID(N'dbo.SmsLog', N'U') IS NOT NULL
+BEGIN
+    /* Add columns that may not exist in the first SMS version. */
+    IF COL_LENGTH(N'dbo.SmsLog', N'PersonId') IS NULL
+        ALTER TABLE dbo.SmsLog ADD PersonId int NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'Message') IS NULL
+        ALTER TABLE dbo.SmsLog ADD Message nvarchar(1000) NOT NULL CONSTRAINT DF_SmsLog_Message_Migration DEFAULT (N'');
+    IF COL_LENGTH(N'dbo.SmsLog', N'TemplateId') IS NULL
+        ALTER TABLE dbo.SmsLog ADD TemplateId int NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'Provider') IS NULL
+        ALTER TABLE dbo.SmsLog ADD Provider varchar(100) NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'ProviderMessageId') IS NULL
+        ALTER TABLE dbo.SmsLog ADD ProviderMessageId varchar(100) NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'ErrorMessage') IS NULL
+        ALTER TABLE dbo.SmsLog ADD ErrorMessage nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'CreatedAt') IS NULL
+        ALTER TABLE dbo.SmsLog ADD CreatedAt datetime2(0) NOT NULL CONSTRAINT DF_SmsLog_CreatedAt_Migration DEFAULT (SYSUTCDATETIME());
+
+    /* Old versions stored Status as text. Preserve the original value and create
+       the numeric status expected by the API: 1=pending, 2=sent, 3=failed. */
+    IF EXISTS
+    (
+        SELECT 1
+        FROM sys.columns c
+        INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+        WHERE c.object_id = OBJECT_ID(N'dbo.SmsLog')
+          AND c.name = N'Status'
+          AND t.name NOT IN (N'int', N'smallint', N'tinyint')
+    )
+    BEGIN
+        IF COL_LENGTH(N'dbo.SmsLog', N'StatusLegacy') IS NULL
+            EXEC sp_rename N'dbo.SmsLog.Status', N'StatusLegacy', N'COLUMN';
+
+        IF COL_LENGTH(N'dbo.SmsLog', N'Status') IS NULL
+            ALTER TABLE dbo.SmsLog ADD Status int NOT NULL CONSTRAINT DF_SmsLog_Status_Migration DEFAULT ((1));
+
+        UPDATE s
+        SET Status = CASE
+            WHEN LOWER(LTRIM(RTRIM(CONVERT(nvarchar(50), StatusLegacy)))) IN (N'sent', N'2') THEN 2
+            WHEN LOWER(LTRIM(RTRIM(CONVERT(nvarchar(50), StatusLegacy)))) IN (N'failed', N'fail', N'3') THEN 3
+            WHEN LOWER(LTRIM(RTRIM(CONVERT(nvarchar(50), StatusLegacy)))) IN (N'pending', N'waiting', N'1') THEN 1
+            ELSE 1
+        END
+        FROM dbo.SmsLog s;
+    END
+
+    /* A legacy SentAt column is harmless and intentionally retained for old data. */
+    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_SmsLog_Status' AND parent_object_id = OBJECT_ID(N'dbo.SmsLog'))
+        ALTER TABLE dbo.SmsLog ADD CONSTRAINT CK_SmsLog_Status CHECK (Status IN (1,2,3));
+
+    IF COL_LENGTH(N'dbo.SmsLog', N'TemplateId') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_SmsLog_Template' AND parent_object_id = OBJECT_ID(N'dbo.SmsLog'))
+       AND OBJECT_ID(N'dbo.SmsTemplate', N'U') IS NOT NULL
+        ALTER TABLE dbo.SmsLog ADD CONSTRAINT FK_SmsLog_Template FOREIGN KEY (TemplateId) REFERENCES dbo.SmsTemplate(Id) ON DELETE SET NULL;
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_SmsLog_PersonId_CreatedAt' AND object_id = OBJECT_ID(N'dbo.SmsLog'))
+        CREATE INDEX IX_SmsLog_PersonId_CreatedAt ON dbo.SmsLog(PersonId, CreatedAt DESC);
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_SmsLog_CreatedAt' AND object_id = OBJECT_ID(N'dbo.SmsLog'))
+        CREATE INDEX IX_SmsLog_CreatedAt ON dbo.SmsLog(CreatedAt DESC);
+END
+GO
