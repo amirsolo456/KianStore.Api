@@ -1,9 +1,4 @@
-/*
-    Coupon layer for the existing KianStore discount engine.
-    Takhfif remains the source of discount rules; these tables only add
-    coupon-code identity and usage tracking.
-*/
-
+/* Discount code tables */
 IF OBJECT_ID(N'dbo.DiscountCode', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.DiscountCode
@@ -52,16 +47,12 @@ BEGIN
         CONSTRAINT FK_DiscountCodeUsage_Sanad FOREIGN KEY (IdSal, IdSanad)
             REFERENCES dbo.Sanad(IDSal, ID) ON DELETE SET NULL
     );
-
-    CREATE INDEX IX_DiscountCodeUsage_CodePerson
-        ON dbo.DiscountCodeUsage(DiscountCodeId, PersonId);
-
-    CREATE INDEX IX_DiscountCodeUsage_Sanad
-        ON dbo.DiscountCodeUsage(IdSal, IdSanad);
+    CREATE INDEX IX_DiscountCodeUsage_CodePerson ON dbo.DiscountCodeUsage(DiscountCodeId, PersonId);
+    CREATE INDEX IX_DiscountCodeUsage_Sanad ON dbo.DiscountCodeUsage(IdSal, IdSanad);
 END
 GO
 
-/* SMS message templates */
+/* SMS templates */
 IF OBJECT_ID(N'dbo.SmsTemplate', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.SmsTemplate
@@ -73,12 +64,11 @@ BEGIN
         CreatedAt datetime2(0) NOT NULL CONSTRAINT DF_SmsTemplate_CreatedAt DEFAULT (SYSUTCDATETIME()),
         UpdatedAt datetime2(0) NULL
     );
-
     CREATE INDEX IX_SmsTemplate_IsActive ON dbo.SmsTemplate(IsActive);
 END
 GO
 
-/* SMS send history */
+/* SMS history */
 IF OBJECT_ID(N'dbo.SmsLog', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.SmsLog
@@ -88,14 +78,15 @@ BEGIN
         Mobile varchar(70) NOT NULL,
         Message nvarchar(1000) NOT NULL,
         TemplateId int NULL,
-        Status varchar(30) NOT NULL,
+        Status int NOT NULL CONSTRAINT DF_SmsLog_Status DEFAULT ((1)),
+        Provider varchar(100) NULL,
         ProviderMessageId varchar(100) NULL,
         ErrorMessage nvarchar(500) NULL,
-        SentAt datetime2(0) NOT NULL CONSTRAINT DF_SmsLog_SentAt DEFAULT (SYSUTCDATETIME()),
-        CONSTRAINT CK_SmsLog_Status CHECK (Status IN ('Pending','Sent','Failed'))
+        CreatedAt datetime2(0) NOT NULL CONSTRAINT DF_SmsLog_CreatedAt DEFAULT (SYSUTCDATETIME()),
+        CONSTRAINT CK_SmsLog_Status CHECK (Status IN (1,2,3)),
+        CONSTRAINT FK_SmsLog_Template FOREIGN KEY (TemplateId) REFERENCES dbo.SmsTemplate(Id) ON DELETE SET NULL
     );
-
-    CREATE INDEX IX_SmsLog_PersonId_SentAt ON dbo.SmsLog(PersonId, SentAt DESC);
-    CREATE INDEX IX_SmsLog_SentAt ON dbo.SmsLog(SentAt DESC);
+    CREATE INDEX IX_SmsLog_PersonId_CreatedAt ON dbo.SmsLog(PersonId, CreatedAt DESC);
+    CREATE INDEX IX_SmsLog_CreatedAt ON dbo.SmsLog(CreatedAt DESC);
 END
 GO
