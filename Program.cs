@@ -26,6 +26,7 @@ builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IStockService, StockService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<DiscountCodeService>();
 
 // Allow the Flutter Web client to call the API from a different origin.
 builder.Services.AddCors(options =>
