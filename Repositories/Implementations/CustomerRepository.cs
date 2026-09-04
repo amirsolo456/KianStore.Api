@@ -80,7 +80,13 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<int> GetNextIdAsync()
     {
-        var maxId = await _context.Tarafs.MaxAsync(t => (int?)t.Id) ?? 0;
+        // Taraf IDs are shared by business logic but the existing database uses
+        // IDType=2 for customers. Generate the next ID from customer records only,
+        // matching the legacy AndAddTaraf procedure.
+        var maxId = await _context.Tarafs
+            .Where(t => t.IdType == 2)
+            .MaxAsync(t => (int?)t.Id) ?? 0;
+
         return maxId + 1;
     }
 }
