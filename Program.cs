@@ -15,50 +15,27 @@ builder.Services.AddControllers();
 var connectionString = builder.Configuration.GetConnectionString("KianStore")
     ?? throw new InvalidOperationException("ConnectionStrings:KianStore is missing.");
 
-builder.Services.AddDbContext<KianStoreDbContext>(options =>
-    options.UseSqlServer(connectionString));
+builder.Services.AddDbContext<KianStoreDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddHttpClient("SmsProvider", client => client.Timeout = TimeSpan.FromSeconds(20));
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<ICustomerRepository, CustomerRepository>();
 builder.Services.AddScoped<IStockRepository, StockRepository>();
-
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IStockService, StockService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<DiscountCodeService>();
+builder.Services.AddScoped<SmsService>();
 
-// Allow the Flutter Web client to call the API from a different origin.
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("FlutterWeb", policy =>
-    {
-        policy
-            .AllowAnyOrigin()
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
-});
-
+builder.Services.AddCors(options => options.AddPolicy("FlutterWeb", policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
-
 app.UseMiddleware<GlobalExceptionMiddleware>();
-
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-else
-{
-    app.UseHttpsRedirection();
-}
-
+if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); } else { app.UseHttpsRedirection(); }
 app.UseCors("FlutterWeb");
 app.UseAuthorization();
 app.MapControllers();
-
 app.Run();
