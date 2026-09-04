@@ -12,6 +12,10 @@ public sealed class SmsController : ControllerBase
 
     public SmsController(SmsService service) => _service = service;
 
+    [HttpGet("status")]
+    public async Task<IActionResult> Status()
+        => Ok(await _service.GetConfigurationStatusAsync());
+
     [HttpPost("send")]
     public async Task<IActionResult> Send([FromBody] SendSmsRequest request, CancellationToken ct)
         => Ok(await _service.SendAsync(request, ct));
