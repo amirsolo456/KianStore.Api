@@ -24,7 +24,7 @@ public sealed class DocumentsController : ControllerBase
         var result = await _documentService.CreateAsync(request, cancellationToken);
 
         if (!result.Success || result.Data == null)
-            return StatusCode(201, result);
+            return BadRequest(result);
 
         var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, cancellationToken);
 
@@ -40,6 +40,79 @@ public sealed class DocumentsController : ControllerBase
             Success = true,
             Code = result.Code,
             Message = result.Message,
+            Data = persisted.Data,
+            Errors = result.Errors,
+            Warnings = result.Warnings,
+            TraceId = result.TraceId
+        });
+    }
+
+    // ثبت سند خرید با همان قرارداد سند فعلی؛ تمام اقلام به‌صورت ورودی ثبت می‌شوند.
+    // sanadType عمداً از سمت کلاینت/تنظیمات کسب‌وکار تعیین می‌شود چون نوع سند در DB قدیمی پروژه ممکن است متفاوت باشد.
+    [HttpPost("purchase")]
+    public async Task<IActionResult> CreatePurchase(
+        [FromBody] CreateDocumentRequest request,
+        [FromQuery] int sanadType,
+        CancellationToken cancellationToken)
+    {
+        if (sanadType <= 0)
+        {
+            return BadRequest(ApiResponse<object>.ErrorResult(
+                "INVALID_PURCHASE_DOCUMENT_TYPE",
+                "نوع سند خرید معتبر نیست."));
+        }
+
+        if (request.Items.Count == 0)
+        {
+            return BadRequest(ApiResponse<object>.ErrorResult(
+                "EMPTY_DOCUMENT",
+                "سند خرید حداقل باید یک قلم داشته باشد."));
+        }
+
+        var purchaseRequest = new CreateDocumentRequest
+        {
+            IdSal = request.IdSal,
+            SanadType = sanadType,
+            IdAnbar = request.IdAnbar,
+            IdTaraf = request.IdTaraf,
+            IdTarafType = request.IdTarafType,
+            IdMasool = request.IdMasool,
+            IdFaktor = request.IdFaktor,
+            IdSandogh = request.IdSandogh,
+            IdSandoghType = request.IdSandoghType,
+            SabtDate = request.SabtDate,
+            Des = request.Des,
+            Sharh = request.Sharh,
+            CheckStock = false,
+            DiscountCodes = request.DiscountCodes,
+            NextPurchaseDiscount = null,
+            Items = request.Items.Select(x => new CreateDocumentItemRequest
+            {
+                IdKala = x.IdKala,
+                Quantity = x.Quantity,
+                UnitPrice = x.UnitPrice,
+                IsIncoming = true,
+                Description = x.Description
+            }).ToList()
+        };
+
+        var result = await _documentService.CreateAsync(purchaseRequest, cancellationToken);
+        if (!result.Success || result.Data == null)
+            return BadRequest(result);
+
+        var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, cancellationToken);
+        if (!persisted.Success || persisted.Data == null)
+        {
+            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult(
+                "PURCHASE_RESPONSE_LOAD_FAILED",
+                "سند خرید ثبت شد اما اطلاعات نهایی آن قابل بازیابی نبود."));
+        }
+
+        return StatusCode(201, new ApiResponse<DocumentResponse>
+        {
+            Success = true,
+            Code = result.Code,
+            Message = "سند خرید با موفقیت ثبت شد و موجودی کالا افزایش یافت.",
             Data = persisted.Data,
             Errors = result.Errors,
             Warnings = result.Warnings,
