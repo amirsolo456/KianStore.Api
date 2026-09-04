@@ -24,6 +24,23 @@ public class KianStoreDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // The existing KianStore database contains many decimal columns.
+        // Give every decimal property an explicit SQL precision/scale so EF Core
+        // does not fall back to SQL Server's default decimal mapping.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                var clrType = Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType;
+                if (clrType == typeof(decimal))
+                {
+                    property.SetPrecision(18);
+                    property.SetScale(3);
+                }
+            }
+        }
+
         modelBuilder.Entity<Kala>(entity => { entity.HasKey(x => x.Id); entity.Property(x => x.MabFrosh).HasPrecision(18, 3); entity.Property(x => x.MabKharid).HasPrecision(18, 3); });
         modelBuilder.Entity<KalaDetail>(entity => { entity.HasKey(x => new { x.IdKala, x.IdAnbar }); entity.Property(x => x.LastMabKharid).HasPrecision(18, 3); entity.Property(x => x.MabFrosh).HasPrecision(18, 3); entity.Property(x => x.MabFrosh1).HasPrecision(18, 3); });
         modelBuilder.Entity<Taraf>(entity => entity.HasKey(x => new { x.Id, x.IdType }));
