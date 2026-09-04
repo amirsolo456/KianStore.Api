@@ -60,3 +60,42 @@ BEGIN
         ON dbo.DiscountCodeUsage(IdSal, IdSanad);
 END
 GO
+
+/* SMS message templates */
+IF OBJECT_ID(N'dbo.SmsTemplate', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SmsTemplate
+    (
+        Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_SmsTemplate PRIMARY KEY,
+        Name nvarchar(100) NOT NULL,
+        TemplateText nvarchar(1000) NOT NULL,
+        IsActive bit NOT NULL CONSTRAINT DF_SmsTemplate_IsActive DEFAULT ((1)),
+        CreatedAt datetime2(0) NOT NULL CONSTRAINT DF_SmsTemplate_CreatedAt DEFAULT (SYSUTCDATETIME()),
+        UpdatedAt datetime2(0) NULL
+    );
+
+    CREATE INDEX IX_SmsTemplate_IsActive ON dbo.SmsTemplate(IsActive);
+END
+GO
+
+/* SMS send history */
+IF OBJECT_ID(N'dbo.SmsLog', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SmsLog
+    (
+        Id bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_SmsLog PRIMARY KEY,
+        PersonId int NULL,
+        Mobile varchar(70) NOT NULL,
+        Message nvarchar(1000) NOT NULL,
+        TemplateId int NULL,
+        Status varchar(30) NOT NULL,
+        ProviderMessageId varchar(100) NULL,
+        ErrorMessage nvarchar(500) NULL,
+        SentAt datetime2(0) NOT NULL CONSTRAINT DF_SmsLog_SentAt DEFAULT (SYSUTCDATETIME()),
+        CONSTRAINT CK_SmsLog_Status CHECK (Status IN ('Pending','Sent','Failed'))
+    );
+
+    CREATE INDEX IX_SmsLog_PersonId_SentAt ON dbo.SmsLog(PersonId, SentAt DESC);
+    CREATE INDEX IX_SmsLog_SentAt ON dbo.SmsLog(SentAt DESC);
+END
+GO
