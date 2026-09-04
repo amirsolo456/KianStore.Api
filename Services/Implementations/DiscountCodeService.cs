@@ -13,7 +13,7 @@ public sealed class DiscountCodeService
 
     public async Task<IReadOnlyList<object>> GetAllAsync(CancellationToken ct = default)
     {
-        return await _context.DiscountCodes.AsNoTracking()
+        var rows = await _context.DiscountCodes.AsNoTracking()
             .OrderByDescending(x => x.Id)
             .Join(_context.Takhfifs, c => c.TakhfifId, t => t.Id, (c, t) => new
             {
@@ -23,8 +23,8 @@ public sealed class DiscountCodeService
                 c.UsageLimit, c.UsedCount, c.PerCustomerLimit,
                 c.IsActive, c.Description, c.CreatedAt
             })
-            .Cast<object>()
             .ToListAsync(ct);
+        return rows.Cast<object>().ToList();
     }
 
     public async Task<object> CreateAsync(CreateDiscountCodeRequest request, CancellationToken ct = default)
@@ -39,22 +39,28 @@ public sealed class DiscountCodeService
         var now = DateTime.UtcNow;
 
         await _context.Database.ExecuteSqlInterpolatedAsync($"""
-            INSERT INTO [Takhfif]
-                ([ID],[TakhfifName],[TakhfifDarsad],[ToMab1])
-            VALUES
-                ({takhfifId},{Truncate(request.Title ?? code, 20)},{request.Type == 1 ? (double)request.Value : 0d},{request.MinOrderAmount ?? 0m})
+            INSERT INTO [Takhfif] ([ID],[TakhfifName],[TakhfifDarsad],[ToMab1])
+            VALUES ({takhfifId},{Truncate(request.Title ?? code, 20)},{request.Type == 1 ? (double)request.Value : 0d},{request.MinOrderAmount ?? 0m})
             """, ct);
 
         var entity = new DiscountCode
         {
-            Code = code, Title = request.Title, TakhfifId = takhfifId,
-            Type = request.Type, Value = request.Value,
+            Code = code,
+            Title = request.Title,
+            TakhfifId = takhfifId,
+            Type = request.Type,
+            Value = request.Value,
             MaxDiscountAmount = request.MaxDiscountAmount,
-            StartDate = request.StartDate.ToUniversalTime(), EndDate = request.EndDate?.ToUniversalTime(),
-            UsageLimit = request.UsageLimit, UsedCount = 0,
-            PerCustomerLimit = request.PerCustomerLimit, IsActive = request.IsActive,
-            Description = request.Description, CreatedAt = now
+            StartDate = request.StartDate.ToUniversalTime(),
+            EndDate = request.EndDate?.ToUniversalTime(),
+            UsageLimit = request.UsageLimit,
+            UsedCount = 0,
+            PerCustomerLimit = request.PerCustomerLimit,
+            IsActive = request.IsActive,
+            Description = request.Description,
+            CreatedAt = now
         };
+
         _context.DiscountCodes.Add(entity);
         await _context.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -70,10 +76,17 @@ public sealed class DiscountCodeService
         if (await _context.DiscountCodes.AnyAsync(x => x.Id != id && x.Code == code, ct))
             throw new InvalidOperationException("این کد تخفیف قبلاً ثبت شده است.");
 
-        entity.Code = code; entity.Title = request.Title; entity.Type = request.Type; entity.Value = request.Value;
-        entity.MaxDiscountAmount = request.MaxDiscountAmount; entity.StartDate = request.StartDate.ToUniversalTime();
-        entity.EndDate = request.EndDate?.ToUniversalTime(); entity.UsageLimit = request.UsageLimit;
-        entity.PerCustomerLimit = request.PerCustomerLimit; entity.IsActive = request.IsActive; entity.Description = request.Description;
+        entity.Code = code;
+        entity.Title = request.Title;
+        entity.Type = request.Type;
+        entity.Value = request.Value;
+        entity.MaxDiscountAmount = request.MaxDiscountAmount;
+        entity.StartDate = request.StartDate.ToUniversalTime();
+        entity.EndDate = request.EndDate?.ToUniversalTime();
+        entity.UsageLimit = request.UsageLimit;
+        entity.PerCustomerLimit = request.PerCustomerLimit;
+        entity.IsActive = request.IsActive;
+        entity.Description = request.Description;
 
         var takhfif = await _context.Takhfifs.FirstAsync(x => x.Id == entity.TakhfifId, ct);
         takhfif.TakhfifDarsad = request.Type == 1 ? (double)request.Value : 0d;
