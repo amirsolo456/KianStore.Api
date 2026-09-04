@@ -68,6 +68,16 @@ var app = builder.Build();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseCors("FlutterWeb");
 app.UseAuthorization();
+
+app.MapGet("/", () => Results.Ok(new
+{
+    success = true,
+    service = "KianStore.Api",
+    environment = app.Environment.EnvironmentName,
+    message = "API در حال اجراست.",
+    health = "/api/health"
+}));
+
 app.MapControllers();
 
 app.Run();
