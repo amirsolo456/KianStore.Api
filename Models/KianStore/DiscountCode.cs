@@ -10,9 +10,11 @@ public sealed class DiscountCode
     public string Code { get; set; } = null!;
     public string? Title { get; set; }
     public int TakhfifId { get; set; }
-    public int Type { get; set; } // 1=percentage, 2=fixed amount
-    public int Scope { get; set; } // 1=public, 2=private
+    public int Type { get; set; }
+    public int Scope { get; set; }
     public int? PersonId { get; set; }
+    public int? IssuedForIdSal { get; set; }
+    public string? IssuedForIdSanad { get; set; }
     public decimal Value { get; set; }
     public decimal? MaxDiscountAmount { get; set; }
     public DateTime StartDate { get; set; }
