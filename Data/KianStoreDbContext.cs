@@ -18,6 +18,9 @@ public class KianStoreDbContext : DbContext
     public DbSet<CheckDef> CheckDefs => Set<CheckDef>();
     public DbSet<Sanad> Sanads => Set<Sanad>();
     public DbSet<SanadDetail> SanadDetails => Set<SanadDetail>();
+    public DbSet<Takhfif> Takhfifs => Set<Takhfif>();
+    public DbSet<DiscountCode> DiscountCodes => Set<DiscountCode>();
+    public DbSet<DiscountCodeUsage> DiscountCodeUsages => Set<DiscountCodeUsage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,10 +46,7 @@ public class KianStoreDbContext : DbContext
             entity.HasKey(x => new { x.Id, x.IdType });
         });
 
-        modelBuilder.Entity<Anbar>(entity =>
-        {
-            entity.HasKey(x => x.Id);
-        });
+        modelBuilder.Entity<Anbar>(entity => entity.HasKey(x => x.Id));
 
         modelBuilder.Entity<Users>(entity =>
         {
@@ -85,6 +85,40 @@ public class KianStoreDbContext : DbContext
             entity.Property(x => x.BedMab2).HasPrecision(18, 5);
             entity.Property(x => x.BesMab2).HasPrecision(18, 5);
             entity.Property(x => x.SumTakhfifKala).HasPrecision(18, 3);
+        });
+
+        modelBuilder.Entity<Takhfif>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.TakhfifName).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.TakhfifDarsad).HasColumnType("float");
+            entity.Property(x => x.ToMab1).HasPrecision(18, 3);
+        });
+
+        modelBuilder.Entity<DiscountCode>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Title).HasMaxLength(200);
+            entity.Property(x => x.Value).HasPrecision(18, 3);
+            entity.Property(x => x.MaxDiscountAmount).HasPrecision(18, 3);
+            entity.Property(x => x.StartDate).HasColumnType("datetime2");
+            entity.Property(x => x.EndDate).HasColumnType("datetime2");
+            entity.Property(x => x.Description).HasMaxLength(1000);
+            entity.Property(x => x.CreatedAt).HasColumnType("datetime2");
+            entity.HasOne<Takhfif>().WithMany().HasForeignKey(x => x.TakhfifId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DiscountCodeUsage>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OrderAmount).HasPrecision(18, 3);
+            entity.Property(x => x.DiscountAmount).HasPrecision(18, 3);
+            entity.Property(x => x.UsedAt).HasColumnType("datetime2");
+            entity.HasIndex(x => new { x.DiscountCodeId, x.PersonId });
+            entity.HasOne<DiscountCode>().WithMany().HasForeignKey(x => x.DiscountCodeId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
