@@ -36,9 +36,6 @@ builder.Services.AddScoped<IStockRepository, StockRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IStockService, StockService>();
-// The legacy Sanad writer is registered last so the existing document controller
-// keeps the same API contract while using the database's canonical procedures.
-builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IDocumentService, LegacyDocumentService>();
 builder.Services.AddScoped<DiscountCodeService>();
 builder.Services.AddScoped<SmsService>();
