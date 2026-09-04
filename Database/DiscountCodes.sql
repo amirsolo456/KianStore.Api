@@ -8,6 +8,8 @@ BEGIN
         Title nvarchar(200) NULL,
         TakhfifId int NOT NULL,
         Type int NOT NULL CONSTRAINT DF_DiscountCode_Type DEFAULT ((1)),
+        Scope int NOT NULL CONSTRAINT DF_DiscountCode_Scope DEFAULT ((1)),
+        PersonId int NULL,
         Value decimal(18,3) NOT NULL,
         MaxDiscountAmount decimal(18,3) NULL,
         StartDate datetime2(0) NOT NULL,
@@ -20,6 +22,8 @@ BEGIN
         CreatedAt datetime2(0) NOT NULL CONSTRAINT DF_DiscountCode_CreatedAt DEFAULT (SYSUTCDATETIME()),
         CONSTRAINT UQ_DiscountCode_Code UNIQUE (Code),
         CONSTRAINT CK_DiscountCode_Type CHECK (Type IN (1,2)),
+        CONSTRAINT CK_DiscountCode_Scope CHECK (Scope IN (1,2)),
+        CONSTRAINT CK_DiscountCode_PrivatePerson CHECK (Scope = 1 OR PersonId IS NOT NULL),
         CONSTRAINT CK_DiscountCode_Value CHECK (Value > 0),
         CONSTRAINT CK_DiscountCode_Percentage CHECK (Type <> 1 OR Value <= 100),
         CONSTRAINT CK_DiscountCode_Date CHECK (EndDate IS NULL OR EndDate >= StartDate),
@@ -27,6 +31,34 @@ BEGIN
         CONSTRAINT CK_DiscountCode_PerCustomer CHECK (PerCustomerLimit IS NULL OR PerCustomerLimit >= 0),
         CONSTRAINT FK_DiscountCode_Takhfif FOREIGN KEY (TakhfifId) REFERENCES dbo.Takhfif(ID)
     );
+    CREATE INDEX IX_DiscountCode_ScopePerson ON dbo.DiscountCode(Scope, PersonId, IsActive);
+END
+GO
+
+/* Existing installations: migrate the added scope columns without dropping data. */
+IF COL_LENGTH(N'dbo.DiscountCode', N'Scope') IS NULL
+BEGIN
+    ALTER TABLE dbo.DiscountCode ADD Scope int NOT NULL CONSTRAINT DF_DiscountCode_Scope_Migration DEFAULT ((1));
+END
+GO
+IF COL_LENGTH(N'dbo.DiscountCode', N'PersonId') IS NULL
+BEGIN
+    ALTER TABLE dbo.DiscountCode ADD PersonId int NULL;
+END
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_DiscountCode_Scope' AND parent_object_id = OBJECT_ID(N'dbo.DiscountCode'))
+BEGIN
+    ALTER TABLE dbo.DiscountCode ADD CONSTRAINT CK_DiscountCode_Scope CHECK (Scope IN (1,2));
+END
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_DiscountCode_PrivatePerson' AND parent_object_id = OBJECT_ID(N'dbo.DiscountCode'))
+BEGIN
+    ALTER TABLE dbo.DiscountCode ADD CONSTRAINT CK_DiscountCode_PrivatePerson CHECK (Scope = 1 OR PersonId IS NOT NULL);
+END
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_DiscountCode_ScopePerson' AND object_id = OBJECT_ID(N'dbo.DiscountCode'))
+BEGIN
+    CREATE INDEX IX_DiscountCode_ScopePerson ON dbo.DiscountCode(Scope, PersonId, IsActive);
 END
 GO
 
