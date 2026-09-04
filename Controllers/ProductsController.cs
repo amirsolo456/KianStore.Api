@@ -17,11 +17,6 @@ public class ProductsController : ControllerBase
         _context = context;
     }
 
-    /// <summary>
-    /// دریافت و جستجوی کالاهای قابل استفاده.
-    /// جستجو فقط بر اساس ID و KalaName انجام می‌شود.
-    /// در حالت بدون عبارت جستجو، تمام کالاهای فعال برگردانده می‌شوند.
-    /// </summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<IEnumerable<Kala>>>> GetProducts(
         [FromQuery] string? search,
@@ -34,16 +29,11 @@ public class ProductsController : ControllerBase
 
         var query = _context.Kalas
             .AsNoTracking()
-            .Where(x =>
-                !x.IsDisabled &&
-                !string.IsNullOrWhiteSpace(x.Id) &&
-                x.Id != "00" &&
-                x.Id != "01");
+            .Where(x => !x.IsDisabled && !string.IsNullOrWhiteSpace(x.Id) && x.Id != "00" && x.Id != "01");
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            search = search
-                .Trim()
+            search = search.Trim()
                 .Replace("ي", "ی")
                 .Replace("ى", "ی")
                 .Replace("ك", "ک")
@@ -53,6 +43,7 @@ public class ProductsController : ControllerBase
 
             query = query.Where(x =>
                 x.Id.Contains(search) ||
+                x.Barcode.Contains(search) ||
                 x.KalaName
                     .Replace("ي", "ی")
                     .Replace("ى", "ی")
@@ -63,17 +54,30 @@ public class ProductsController : ControllerBase
                     .Contains(search));
         }
 
-        var products = string.IsNullOrWhiteSpace(search)
-            ? await query
-                .OrderBy(x => x.KalaName)
-                .ToListAsync(cancellationToken)
-            : await query
-                .OrderBy(x => x.KalaName)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync(cancellationToken);
+        var products = await query
+            .OrderBy(x => x.KalaName)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
 
         return Ok(ApiResponse<IEnumerable<Kala>>.SuccessResult(products));
+    }
+
+    [HttpGet("barcode/{barcode}")]
+    public async Task<ActionResult<ApiResponse<Kala>>> GetByBarcode(
+        string barcode,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(barcode))
+            return BadRequest(ApiResponse<Kala>.ErrorResult("INVALID_BARCODE", "بارکد معتبر نیست."));
+
+        var product = await _context.Kalas.AsNoTracking()
+            .FirstOrDefaultAsync(x => !x.IsDisabled && x.Barcode == barcode.Trim(), cancellationToken);
+
+        if (product == null)
+            return NotFound(ApiResponse<Kala>.ErrorResult("PRODUCT_NOT_FOUND", "کالایی با این بارکد یافت نشد."));
+
+        return Ok(ApiResponse<Kala>.SuccessResult(product));
     }
 
     [HttpGet("{id}")]
