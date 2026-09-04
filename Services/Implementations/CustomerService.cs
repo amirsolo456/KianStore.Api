@@ -75,29 +75,39 @@ public class CustomerService : ICustomerService
                     : "نام و نام خانوادگی الزامی است.");
         }
 
-        // Taraf.IDType is the طرف/customer type used by the existing KianStore schema.
-        // Both حقیقی and حقوقی buyers belong to طرف type 2. The UI PersonType is a
-        // presentation-level distinction and must not be written into Taraf.IDType.
-        const int customerTarafType = 2;
-        var nextId = await _customerRepository.GetNextIdAsync();
-
-        var taraf = new Taraf
+        try
         {
-            Id = nextId,
-            IdType = customerTarafType,
-            Name = name,
-            Mobile = mobile,
-            Phone = request.Phone?.Trim(),
-            Address = request.Address?.Trim(),
-            IsBuyer = true,
-            IsDisabled = false
-        };
+            // Taraf.IDType=2 is the existing KianStore customer/طرف type.
+            // حقیقی/حقوقی is a UI distinction and must not be stored as IDType.
+            const int customerTarafType = 2;
 
-        await _customerRepository.CreateAsync(taraf);
+            var taraf = new Taraf
+            {
+                Id = 0,
+                IdType = customerTarafType,
+                Name = name,
+                Mobile = mobile,
+                Phone = request.Phone?.Trim(),
+                Address = request.Address?.Trim(),
+                IsBuyer = true,
+                IsDisabled = false
+            };
 
-        return ApiResponse<CustomerResponse>.SuccessResult(
-            Map(taraf),
-            "مشتری با موفقیت ایجاد شد.");
+            var created = await _customerRepository.CreateAsync(taraf);
+
+            return ApiResponse<CustomerResponse>.SuccessResult(
+                Map(created),
+                "مشتری با موفقیت ایجاد شد.");
+        }
+        catch (Exception ex)
+        {
+            // Do not turn a database/schema problem into an opaque HTTP 500.
+            // The Flutter client can display this message and copy it for diagnosis.
+            var detail = ex.InnerException?.Message ?? ex.Message;
+            return ApiResponse<CustomerResponse>.ErrorResult(
+                "CUSTOMER_CREATE_FAILED",
+                $"ثبت مشتری در دیتابیس انجام نشد: {detail}");
+        }
     }
 
     private static CustomerResponse Map(Taraf taraf) => new()
