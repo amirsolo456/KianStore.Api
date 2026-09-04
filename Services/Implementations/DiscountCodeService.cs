@@ -38,10 +38,17 @@ public sealed class DiscountCodeService
         var takhfifId = (await _context.Takhfifs.MaxAsync(x => (int?)x.Id, ct) ?? 0) + 1;
         var now = DateTime.UtcNow;
         var takhfifDarsad = request.Type == 1 ? (double)request.Value : 0d;
+        var minOrderAmount = request.MinOrderAmount ?? 0m;
+        var takhfifName = Truncate(request.Title ?? code, 20);
 
         await _context.Database.ExecuteSqlInterpolatedAsync($"""
-            INSERT INTO [Takhfif] ([ID],[TakhfifName],[TakhfifDarsad],[ToMab1])
-            VALUES ({takhfifId},{Truncate(request.Title ?? code, 20)},{takhfifDarsad},{request.MinOrderAmount ?? 0m})
+            INSERT INTO [Takhfif]
+            ([ID],[TakhfifName],[TakhfifDarsad],[ToMab1],[TakhfifDarsad2],[ToMab2],
+             [SumType],[ByTakhfifKala],[Pelekani],[IDHyperMarket],[IdKalaListEx],[IdKalaListOnly],
+             [ApplyType],[TasviehType],[IsDisabe],[IDUser],[OrderIndex])
+            VALUES
+            ({takhfifId},{takhfifName},{takhfifDarsad},{minOrderAmount},0,0,
+             0,0,0,0,0,0,0,0,0,0,0)
             """, ct);
 
         var entity = new DiscountCode
