@@ -13,6 +13,8 @@ public sealed class DiscountCode
     public int Type { get; set; }
     public decimal Value { get; set; }
     public decimal? MaxDiscountAmount { get; set; }
+    public DateTime StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
     public int? UsageLimit { get; set; }
     public int UsedCount { get; set; }
     public int? PerCustomerLimit { get; set; }
