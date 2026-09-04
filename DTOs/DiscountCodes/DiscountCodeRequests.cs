@@ -16,7 +16,9 @@ public sealed class CreateDiscountCodeRequest
     public string? Description { get; set; }
 }
 
-public sealed class UpdateDiscountCodeRequest : CreateDiscountCodeRequest;
+public sealed class UpdateDiscountCodeRequest : CreateDiscountCodeRequest
+{
+}
 
 public sealed class ValidateDiscountCodeRequest
 {
