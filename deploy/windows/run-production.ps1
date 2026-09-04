@@ -3,21 +3,34 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$PublishRoot = (Resolve-Path (Join-Path $PSScriptRoot 'publish')).Path
-$Dll = Join-Path $PublishRoot 'KianStore.Api.dll'
+$Root = $PSScriptRoot
+$Exe = Join-Path $Root 'KianStore.Api.exe'
+$Dll = Join-Path $Root 'KianStore.Api.dll'
 
-if (-not (Test-Path $Dll)) {
-    throw "Published API not found: $Dll"
+# The release artifact is self-contained/single-file. For backwards compatibility,
+# the script can also run the framework-dependent DLL when it is present.
+if (Test-Path $Exe) {
+    $Application = $Exe
+    $UseDotNet = $false
+}
+elseif (Test-Path $Dll) {
+    $Application = $Dll
+    $UseDotNet = $true
+}
+else {
+    throw "Published API executable not found in $Root"
 }
 
 $env:ASPNETCORE_ENVIRONMENT = 'Production'
 $env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
 
-# The production appsettings file already points to .\SQL2025 / KianStore_2.
-# A machine-level ConnectionStrings__KianStore value can override it when needed.
-
 Write-Host "Starting KianStore.Api on http://127.0.0.1:$Port" -ForegroundColor Cyan
 Write-Host "Health: http://127.0.0.1:$Port/api/health" -ForegroundColor Cyan
 
-Set-Location $PublishRoot
-dotnet .\KianStore.Api.dll
+Set-Location $Root
+if ($UseDotNet) {
+    & dotnet $Application
+}
+else {
+    & $Application
+}
