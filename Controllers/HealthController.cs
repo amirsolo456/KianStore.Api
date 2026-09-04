@@ -9,10 +9,12 @@ namespace KianStore.Api.Controllers;
 public sealed class HealthController : ControllerBase
 {
     private readonly KianStoreDbContext _context;
+    private readonly ILogger<HealthController> _logger;
 
-    public HealthController(KianStoreDbContext context)
+    public HealthController(KianStoreDbContext context, ILogger<HealthController> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -32,7 +34,6 @@ public sealed class HealthController : ControllerBase
                 });
             }
 
-            // Also verify that the customers table/query path used by the app is available.
             await _context.Tarafs
                 .AsNoTracking()
                 .Select(x => x.Id)
@@ -50,13 +51,14 @@ public sealed class HealthController : ControllerBase
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Health check failed for KianStore.Api.");
+
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new
             {
                 success = false,
-                message = "API در دسترس است اما بررسی دیتابیس یا جدول مشتریان با خطا مواجه شد.",
+                message = "API در دسترس است اما بررسی دیتابیس با خطا مواجه شد.",
                 service = "KianStore.Api",
-                database = "error",
-                error = ex.Message
+                database = "error"
             });
         }
     }
