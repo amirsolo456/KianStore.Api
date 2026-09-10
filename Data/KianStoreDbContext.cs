@@ -9,6 +9,8 @@ public class KianStoreDbContext : DbContext
 
     public DbSet<Kala> Kalas => Set<Kala>();
     public DbSet<KalaDetail> KalaDetails => Set<KalaDetail>();
+    public DbSet<KalaWeb> KalaWebs => Set<KalaWeb>();
+    public DbSet<KalaWebImage> KalaWebImages => Set<KalaWebImage>();
     public DbSet<Taraf> Tarafs => Set<Taraf>();
     public DbSet<Anbar> Anbars => Set<Anbar>();
     public DbSet<Users> Users => Set<Users>();
@@ -25,9 +27,6 @@ public class KianStoreDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // The existing KianStore database contains many decimal columns.
-        // Give every decimal property an explicit SQL precision/scale so EF Core
-        // does not fall back to SQL Server's default decimal mapping.
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             foreach (var property in entityType.GetProperties())
@@ -43,6 +42,18 @@ public class KianStoreDbContext : DbContext
 
         modelBuilder.Entity<Kala>(entity => { entity.HasKey(x => x.Id); entity.Property(x => x.MabFrosh).HasPrecision(18, 3); entity.Property(x => x.MabKharid).HasPrecision(18, 3); });
         modelBuilder.Entity<KalaDetail>(entity => { entity.HasKey(x => new { x.IdKala, x.IdAnbar }); entity.Property(x => x.LastMabKharid).HasPrecision(18, 3); entity.Property(x => x.MabFrosh).HasPrecision(18, 3); entity.Property(x => x.MabFrosh1).HasPrecision(18, 3); });
+        modelBuilder.Entity<KalaWeb>(entity =>
+        {
+            entity.HasKey(x => x.IdKala);
+            entity.HasIndex(x => x.Slug).IsUnique().HasFilter("[Slug] IS NOT NULL");
+            entity.HasOne(x => x.Kala).WithMany().HasForeignKey(x => x.IdKala).OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(x => x.Images).WithOne(x => x.KalaWeb).HasForeignKey(x => x.IdKala).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<KalaWebImage>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedOnAdd();
+        });
         modelBuilder.Entity<Taraf>(entity => entity.HasKey(x => new { x.Id, x.IdType }));
         modelBuilder.Entity<Anbar>(entity => entity.HasKey(x => x.Id));
         modelBuilder.Entity<Users>(entity => { entity.HasKey(x => x.Id); entity.Property(x => x.Id).HasColumnName("ID"); entity.Property(x => x.IdSandogh).HasColumnName("IDSandogh"); entity.Property(x => x.IdSandoghType).HasColumnName("IDSandoghType"); });
