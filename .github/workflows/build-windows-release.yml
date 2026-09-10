@@ -41,6 +41,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $package = '.\artifacts\KianStore.Api'
+          Copy-Item '.\server.config.txt' $package -Force
           Copy-Item '.\web.config' $package -Force
           Copy-Item '.\appsettings.Production.json' $package -Force
           Copy-Item '.\deploy\windows\run-production.ps1' $package -Force
