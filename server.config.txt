@@ -13,8 +13,8 @@ PublicBaseUrl=http://95.38.183.66:5000
 # CORS - comma separated origins. Leave empty to allow any origin.
 CorsAllowedOrigins=
 
-# SMS
-SmsProvider=HttpSmsProvider
-SmsSendUrl=
+# SMS - Kavenegar
+SmsProvider=Kavenegar
+SmsSendUrl=https://api.kavenegar.com/v1/{API_KEY}/sms/send.json
 SmsApiKey=
 SmsSender=
