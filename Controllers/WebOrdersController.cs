@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace KianStore.Api.Controllers;
 
 /// <summary>
-/// Website checkout facade. It reuses the existing customer/document services
+/// Website checkout facade. It reuses the existing customer/document/stock services
 /// and therefore writes only to the existing KianStore tables.
 /// </summary>
 [ApiController]
@@ -17,15 +17,18 @@ public sealed class WebOrdersController : ControllerBase
 {
     private readonly ICustomerService _customerService;
     private readonly IDocumentService _documentService;
+    private readonly IStockService _stockService;
     private readonly IConfiguration _configuration;
 
     public WebOrdersController(
         ICustomerService customerService,
         IDocumentService documentService,
+        IStockService stockService,
         IConfiguration configuration)
     {
         _customerService = customerService;
         _documentService = documentService;
+        _stockService = stockService;
         _configuration = configuration;
     }
 
@@ -37,23 +40,48 @@ public sealed class WebOrdersController : ControllerBase
         if (request.Items.Count == 0)
             return BadRequest(ApiResponse<WebOrderCreatedResponse>.ErrorResult("EMPTY_ORDER", "سبد خرید خالی است."));
 
-        var idSal = GetInt("WebOrderIdSal", 1405);
-        var sanadType = GetInt("WebOrderSanadType", 12);
-        var idAnbar = GetInt("WebOrderIdAnbar", 1);
-        var idMasool = GetInt("WebOrderIdMasool", 101);
-        var idSandogh = GetInt("WebOrderIdSandogh", 0);
-        var idSandoghType = GetInt("WebOrderIdSandoghType", 0);
+        var idSal = GetInt("WebOrder:IdSal", 1405);
+        var sanadType = GetInt("WebOrder:SanadType", 12);
+        var idAnbar = GetInt("WebOrder:IdAnbar", 1);
+        var idMasool = GetInt("WebOrder:IdMasool", 101);
+        var idSandogh = GetInt("WebOrder:IdSandogh", 0);
+        var idSandoghType = GetInt("WebOrder:IdSandoghType", 0);
 
         if (sanadType <= 0 || idSandogh <= 0)
         {
             return StatusCode(500, ApiResponse<WebOrderCreatedResponse>.ErrorResult(
                 "WEB_ORDER_CONFIGURATION_MISSING",
-                "تنظیمات ثبت سفارش وب‌سایت کامل نیست. WebOrderSanadType و WebOrderIdSandogh را در server.config.txt تنظیم کنید."));
+                "تنظیمات ثبت سفارش وب‌سایت کامل نیست. WebOrderIdSandogh و WebOrderSanadType را در server.config.txt تنظیم کنید."));
         }
 
         var mobile = request.Mobile.Trim();
         if (mobile.Length == 0)
             return BadRequest(ApiResponse<WebOrderCreatedResponse>.ErrorResult("INVALID_MOBILE", "شماره موبایل الزامی است."));
+
+        // Never trust price values sent by the browser. The existing document service
+        // uses KianStore's current MabFrosh when UnitPrice is null.
+        var uniqueItems = request.Items
+            .GroupBy(x => x.IdKala.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new CreateWebOrderItem
+            {
+                IdKala = g.Key,
+                Quantity = g.Sum(x => x.Quantity)
+            })
+            .ToList();
+
+        foreach (var item in uniqueItems)
+        {
+            if (item.Quantity <= 0)
+                return BadRequest(ApiResponse<WebOrderCreatedResponse>.ErrorResult("INVALID_QUANTITY", "تعداد کالا باید بیشتر از صفر باشد."));
+
+            var stock = await _stockService.CheckAsync(item.IdKala, item.Quantity, idAnbar, idSal, cancellationToken);
+            if (!stock.IsAvailable)
+            {
+                return Conflict(ApiResponse<WebOrderCreatedResponse>.ErrorResult(
+                    "INSUFFICIENT_STOCK",
+                    $"موجودی کالای {item.IdKala} کافی نیست. موجودی قابل فروش: {stock.Available}."));
+            }
+        }
 
         var customer = await _customerService.GetByMobileAsync(mobile);
         if (!customer.Success || customer.Data == null)
@@ -77,7 +105,7 @@ public sealed class WebOrdersController : ControllerBase
                     createCustomer.Code ?? "CUSTOMER_CREATE_FAILED",
                     createCustomer.Message ?? "ثبت مشتری انجام نشد."));
 
-            customer = ApiResponse<KianStore.Api.DTOs.Customers.CustomerResponse>.SuccessResult(createCustomer.Data);
+            customer = ApiResponse<CustomerResponse>.SuccessResult(createCustomer.Data);
         }
 
         var document = await _documentService.CreateAsync(new CreateDocumentRequest
@@ -94,11 +122,11 @@ public sealed class WebOrdersController : ControllerBase
             Des = "سفارش ثبت‌شده از وب‌سایت",
             Sharh = request.Description,
             CheckStock = true,
-            Items = request.Items.Select(x => new CreateDocumentItemRequest
+            Items = uniqueItems.Select(x => new CreateDocumentItemRequest
             {
                 IdKala = x.IdKala,
                 Quantity = x.Quantity,
-                UnitPrice = x.UnitPrice,
+                UnitPrice = null,
                 IsIncoming = false
             }).ToList()
         }, cancellationToken);
