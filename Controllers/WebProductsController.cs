@@ -61,22 +61,18 @@ public sealed class WebProductsController : ControllerBase
             OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
             """;
 
-        var rows = new List<WebProductResponse>(pageSize);
-        await using var command = _context.Database.GetDbConnection().CreateCommand();
-        command.CommandText = sql;
-        command.CommandType = CommandType.Text;
-        command.CommandTimeout = 30;
-
-        command.Parameters.Add(new SqlParameter("@search", System.Data.SqlDbType.NVarChar, 200)
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection)
         {
-            Value = normalizedSearch
-        });
-        command.Parameters.Add(new SqlParameter("@offset", System.Data.SqlDbType.Int) { Value = offset });
-        command.Parameters.Add(new SqlParameter("@pageSize", System.Data.SqlDbType.Int) { Value = pageSize });
+            CommandTimeout = 30
+        };
 
-        if (command.Connection!.State != ConnectionState.Open)
-            await command.Connection.OpenAsync(cancellationToken);
+        command.Parameters.Add(new SqlParameter("@search", SqlDbType.NVarChar, 200) { Value = normalizedSearch });
+        command.Parameters.Add(new SqlParameter("@offset", SqlDbType.Int) { Value = offset });
+        command.Parameters.Add(new SqlParameter("@pageSize", SqlDbType.Int) { Value = pageSize });
 
+        var rows = new List<WebProductResponse>(pageSize);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -113,14 +109,13 @@ public sealed class WebProductsController : ControllerBase
             WHERE k.ID = @id;
             """;
 
-        await using var command = _context.Database.GetDbConnection().CreateCommand();
-        command.CommandText = sql;
-        command.CommandType = CommandType.Text;
-        command.CommandTimeout = 30;
-        command.Parameters.Add(new SqlParameter("@id", System.Data.SqlDbType.VarChar, 20) { Value = id.Trim() });
-
-        if (command.Connection!.State != ConnectionState.Open)
-            await command.Connection.OpenAsync(cancellationToken);
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 30
+        };
+        command.Parameters.Add(new SqlParameter("@id", SqlDbType.VarChar, 20) { Value = id.Trim() });
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -148,17 +143,19 @@ public sealed class WebProductsController : ControllerBase
             2 => "Image2",
             3 => "Image3",
             4 => "Image4",
-            _ => throw new UnreachableException()
+            _ => string.Empty
         };
 
-        await using var command = _context.Database.GetDbConnection().CreateCommand();
-        command.CommandText = $"SELECT {column} FROM dbo.KalaAdv WHERE IDKala = @id;";
-        command.CommandType = CommandType.Text;
-        command.CommandTimeout = 30;
-        command.Parameters.Add(new SqlParameter("@id", System.Data.SqlDbType.VarChar, 20) { Value = id.Trim() });
+        if (column.Length == 0)
+            return NotFound();
 
-        if (command.Connection!.State != ConnectionState.Open)
-            await command.Connection.OpenAsync(cancellationToken);
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand($"SELECT {column} FROM dbo.KalaAdv WHERE IDKala = @id;", connection)
+        {
+            CommandTimeout = 30
+        };
+        command.Parameters.Add(new SqlParameter("@id", SqlDbType.VarChar, 20) { Value = id.Trim() });
 
         var value = await command.ExecuteScalarAsync(cancellationToken);
         if (value is null || value == DBNull.Value)
@@ -169,6 +166,14 @@ public sealed class WebProductsController : ControllerBase
             return NotFound();
 
         return File(bytes, DetectImageContentType(bytes));
+    }
+
+    private SqlConnection CreateConnection()
+    {
+        var connectionString = _context.Database.GetConnectionString();
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException("Connection string is not configured.");
+        return new SqlConnection(connectionString);
     }
 
     private static WebProductResponse Map(System.Data.Common.DbDataReader reader, string id)
