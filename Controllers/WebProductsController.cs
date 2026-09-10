@@ -4,7 +4,6 @@ using KianStore.Api.DTOs.WebProducts;
 using KianStore.Api.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
 
 namespace KianStore.Api.Controllers;
 
@@ -68,12 +67,12 @@ public sealed class WebProductsController : ControllerBase
         command.CommandType = CommandType.Text;
         command.CommandTimeout = 30;
 
-        command.Parameters.Add(new SqlParameter("@search", SqlDbType.NVarChar, 200)
+        command.Parameters.Add(new SqlParameter("@search", System.Data.SqlDbType.NVarChar, 200)
         {
             Value = normalizedSearch
         });
-        command.Parameters.Add(new SqlParameter("@offset", SqlDbType.Int) { Value = offset });
-        command.Parameters.Add(new SqlParameter("@pageSize", SqlDbType.Int) { Value = pageSize });
+        command.Parameters.Add(new SqlParameter("@offset", System.Data.SqlDbType.Int) { Value = offset });
+        command.Parameters.Add(new SqlParameter("@pageSize", System.Data.SqlDbType.Int) { Value = pageSize });
 
         if (command.Connection!.State != ConnectionState.Open)
             await command.Connection.OpenAsync(cancellationToken);
@@ -82,11 +81,11 @@ public sealed class WebProductsController : ControllerBase
         while (await reader.ReadAsync(cancellationToken))
         {
             var id = reader.GetString(reader.GetOrdinal("Id"));
-            rows.Add(Map(reader, id));
+            var product = Map(reader, id);
+            product.ImageUrls = BuildImageUrls(product.Id);
+            product.MainImageUrl = product.ImageUrls[0];
+            rows.Add(product);
         }
-
-        foreach (var product in rows)
-            product.MainImageUrl = $"{GetBaseUrl()}/api/web/products/{Uri.EscapeDataString(product.Id)}/images/1";
 
         return Ok(ApiResponse<IReadOnlyList<WebProductResponse>>.SuccessResult(rows));
     }
@@ -118,7 +117,7 @@ public sealed class WebProductsController : ControllerBase
         command.CommandText = sql;
         command.CommandType = CommandType.Text;
         command.CommandTimeout = 30;
-        command.Parameters.Add(new SqlParameter("@id", SqlDbType.VarChar, 20) { Value = id.Trim() });
+        command.Parameters.Add(new SqlParameter("@id", System.Data.SqlDbType.VarChar, 20) { Value = id.Trim() });
 
         if (command.Connection!.State != ConnectionState.Open)
             await command.Connection.OpenAsync(cancellationToken);
@@ -128,9 +127,7 @@ public sealed class WebProductsController : ControllerBase
             return NotFound(ApiResponse<WebProductResponse>.ErrorResult("PRODUCT_NOT_FOUND", "کالا یافت نشد."));
 
         var product = Map(reader, id.Trim());
-        product.ImageUrls = Enumerable.Range(1, 4)
-            .Select(slot => $"{GetBaseUrl()}/api/web/products/{Uri.EscapeDataString(product.Id)}/images/{slot}")
-            .ToArray();
+        product.ImageUrls = BuildImageUrls(product.Id);
         product.MainImageUrl = product.ImageUrls[0];
 
         return Ok(ApiResponse<WebProductResponse>.SuccessResult(product));
@@ -158,7 +155,7 @@ public sealed class WebProductsController : ControllerBase
         command.CommandText = $"SELECT {column} FROM dbo.KalaAdv WHERE IDKala = @id;";
         command.CommandType = CommandType.Text;
         command.CommandTimeout = 30;
-        command.Parameters.Add(new SqlParameter("@id", SqlDbType.VarChar, 20) { Value = id.Trim() });
+        command.Parameters.Add(new SqlParameter("@id", System.Data.SqlDbType.VarChar, 20) { Value = id.Trim() });
 
         if (command.Connection!.State != ConnectionState.Open)
             await command.Connection.OpenAsync(cancellationToken);
@@ -189,6 +186,11 @@ public sealed class WebProductsController : ControllerBase
         };
     }
 
+    private string[] BuildImageUrls(string id)
+        => Enumerable.Range(1, 4)
+            .Select(slot => $"{GetBaseUrl()}/api/web/products/{Uri.EscapeDataString(id)}/images/{slot}")
+            .ToArray();
+
     private static string NormalizePersian(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -204,11 +206,7 @@ public sealed class WebProductsController : ControllerBase
     }
 
     private string GetBaseUrl()
-    {
-        var scheme = Request.Scheme;
-        var host = Request.Host.Value;
-        return $"{scheme}://{host}";
-    }
+        => $"{Request.Scheme}://{Request.Host.Value}";
 
     private static string DetectImageContentType(byte[] bytes)
     {
