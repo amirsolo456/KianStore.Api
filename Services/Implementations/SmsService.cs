@@ -1,5 +1,5 @@
-using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Sms;
 using KianStore.Api.Models.KianStore;
@@ -150,52 +150,66 @@ public sealed class SmsService
 
     private async Task<(string Provider, string? ProviderMessageId)> SendToProviderAsync(string mobile, string message, CancellationToken ct)
     {
-        var url = _configuration["Sms:SendUrl"]?.Trim();
+        var configuredUrl = _configuration["Sms:SendUrl"]?.Trim();
         var apiKey = _configuration["Sms:ApiKey"]?.Trim();
         var sender = _configuration["Sms:Sender"]?.Trim();
         var provider = _configuration["Sms:Provider"]?.Trim();
 
-        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("تنظیمات سرویس پیامک کامل نشده است: Sms:SendUrl و Sms:ApiKey را تنظیم کنید.");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("کلید API سرویس پیامک تنظیم نشده است: Sms:ApiKey را در server.config.txt تنظیم کنید.");
+
+        var url = string.IsNullOrWhiteSpace(configuredUrl)
+            ? $"https://api.kavenegar.com/v1/{Uri.EscapeDataString(apiKey)}/sms/send.json"
+            : configuredUrl.Replace("{API_KEY}", Uri.EscapeDataString(apiKey), StringComparison.OrdinalIgnoreCase);
 
         var client = _httpClientFactory.CreateClient("SmsProvider");
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.TryAddWithoutValidation("X-Api-Key", apiKey);
-        request.Content = JsonContent.Create(new
+        var form = new Dictionary<string, string>
         {
-            mobile,
-            message,
-            sender
-        });
+            ["receptor"] = mobile,
+            ["message"] = message
+        };
+        if (!string.IsNullOrWhiteSpace(sender))
+            form["sender"] = sender;
 
+        request.Content = new FormUrlEncodedContent(form);
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
         {
             var safeBody = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body;
-            throw new InvalidOperationException($"پاسخ پنل پیامک ناموفق بود: {(int)response.StatusCode} {safeBody}");
+            throw new InvalidOperationException($"پاسخ کاوه‌نگار ناموفق بود: {(int)response.StatusCode} {safeBody}");
         }
 
         string? providerMessageId = null;
         try
         {
             using var json = JsonDocument.Parse(body);
-            providerMessageId = TryGetString(json.RootElement, "messageId")
-                ?? TryGetString(json.RootElement, "message_id")
-                ?? TryGetString(json.RootElement, "id")
-                ?? TryGetString(json.RootElement, "resultId")
-                ?? TryGetString(json.RootElement, "result_id");
+            var root = json.RootElement;
+            if (root.TryGetProperty("return", out var ret))
+            {
+                if (ret.TryGetProperty("status", out var statusElement) && statusElement.TryGetInt32(out var status) && status < 200)
+                    throw new InvalidOperationException($"کاوه‌نگار خطا برگرداند: {ret.GetProperty("message").GetString()}");
+
+                if (ret.TryGetProperty("entries", out var entries) && entries.ValueKind == JsonValueKind.Array && entries.GetArrayLength() > 0)
+                {
+                    var entry = entries[0];
+                    providerMessageId = GetJsonString(entry, "messageid")
+                        ?? GetJsonString(entry, "messageId")
+                        ?? GetJsonString(entry, "id");
+                }
+            }
         }
         catch (JsonException)
         {
-            // Some providers return plain text on success; provider id is optional.
+            // Keep compatibility with providers/proxies that return plain text.
         }
 
-        return (string.IsNullOrWhiteSpace(provider) ? "HttpSmsProvider" : provider, providerMessageId);
+        return (string.IsNullOrWhiteSpace(provider) ? "Kavenegar" : provider, providerMessageId);
     }
 
-    private static string? TryGetString(JsonElement element, string propertyName)
+    private static string? GetJsonString(JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var value)) return null;
         return value.ValueKind switch
