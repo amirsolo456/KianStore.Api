@@ -47,6 +47,14 @@ builder.Configuration["Sms:SendUrl"] = serverConfig.GetValueOrDefault("SmsSendUr
 builder.Configuration["Sms:ApiKey"] = serverConfig.GetValueOrDefault("SmsApiKey", string.Empty);
 builder.Configuration["Sms:Sender"] = serverConfig.GetValueOrDefault("SmsSender", string.Empty);
 
+// Website checkout settings. These values are deployment-specific and must be kept in server.config.txt.
+builder.Configuration["WebOrder:IdSal"] = serverConfig.GetValueOrDefault("WebOrderIdSal", "1405");
+builder.Configuration["WebOrder:SanadType"] = serverConfig.GetValueOrDefault("WebOrderSanadType", "12");
+builder.Configuration["WebOrder:IdAnbar"] = serverConfig.GetValueOrDefault("WebOrderIdAnbar", "1");
+builder.Configuration["WebOrder:IdMasool"] = serverConfig.GetValueOrDefault("WebOrderIdMasool", "101");
+builder.Configuration["WebOrder:IdSandogh"] = serverConfig.GetValueOrDefault("WebOrderIdSandogh", "0");
+builder.Configuration["WebOrder:IdSandoghType"] = serverConfig.GetValueOrDefault("WebOrderIdSandoghType", "0");
+
 builder.Services.AddControllers();
 
 builder.Services.AddDbContext<KianStoreDbContext>(options =>
