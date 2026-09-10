@@ -170,9 +170,9 @@ public sealed class WebProductsController : ControllerBase
 
     private SqlConnection CreateConnection()
     {
-        var connectionString = _context.Database.GetConnectionString();
+        var connectionString = _context.Database.GetConnectionString("KianStore");
         if (string.IsNullOrWhiteSpace(connectionString))
-            throw new InvalidOperationException("Connection string is not configured.");
+            throw new InvalidOperationException("KianStore connection string is not configured.");
         return new SqlConnection(connectionString);
     }
 
