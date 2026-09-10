@@ -2,14 +2,14 @@ namespace KianStore.Api.DTOs.WebProducts;
 
 public sealed class WebProductResponse
 {
-    public string Id { get; init; } = string.Empty;
-    public string Name { get; init; } = string.Empty;
-    public decimal Price { get; init; }
-    public decimal Stock { get; init; }
-    public string? Barcode { get; init; }
-    public bool IsActive { get; init; }
-    public string? Description { get; init; }
-    public string? ShortDescription { get; init; }
-    public string? MainImageUrl { get; init; }
-    public IReadOnlyList<string> ImageUrls { get; init; } = Array.Empty<string>();
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public decimal Price { get; set; }
+    public decimal Stock { get; set; }
+    public string? Barcode { get; set; }
+    public bool IsActive { get; set; }
+    public string? Description { get; set; }
+    public string? ShortDescription { get; set; }
+    public string? MainImageUrl { get; set; }
+    public IReadOnlyList<string> ImageUrls { get; set; } = Array.Empty<string>();
 }
