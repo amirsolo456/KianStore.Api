@@ -1,31 +1,36 @@
 using KianStore.Api.Common;
+using KianStore.Api.Data;
 using KianStore.Api.DTOs.Customers;
 using KianStore.Api.DTOs.Documents;
 using KianStore.Api.DTOs.WebOrders;
 using KianStore.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace KianStore.Api.Controllers;
 
 /// <summary>
-/// Website checkout facade. It reuses the existing customer/document/stock services
-/// and therefore writes only to the existing KianStore tables.
+/// Website checkout facade. It reuses the existing KianStore customer/document/stock
+/// services and existing tables; no web-specific business schema is created.
 /// </summary>
 [ApiController]
 [Route("api/web/orders")]
 public sealed class WebOrdersController : ControllerBase
 {
+    private readonly KianStoreDbContext _context;
     private readonly ICustomerService _customerService;
     private readonly IDocumentService _documentService;
     private readonly IStockService _stockService;
     private readonly IConfiguration _configuration;
 
     public WebOrdersController(
+        KianStoreDbContext context,
         ICustomerService customerService,
         IDocumentService documentService,
         IStockService stockService,
         IConfiguration configuration)
     {
+        _context = context;
         _customerService = customerService;
         _documentService = documentService;
         _stockService = stockService;
@@ -44,22 +49,36 @@ public sealed class WebOrdersController : ControllerBase
         var sanadType = GetInt("WebOrder:SanadType", 12);
         var idAnbar = GetInt("WebOrder:IdAnbar", 1);
         var idMasool = GetInt("WebOrder:IdMasool", 101);
-        var idSandogh = GetInt("WebOrder:IdSandogh", 0);
-        var idSandoghType = GetInt("WebOrder:IdSandoghType", 0);
 
-        if (sanadType <= 0 || idSandogh <= 0)
+        var configuredCashboxId = GetInt("WebOrder:IdSandogh", 0);
+        var configuredCashboxType = GetInt("WebOrder:IdSandoghType", 0);
+        var cashbox = configuredCashboxId > 0
+            ? await _context.CheckDefs.AsNoTracking()
+                .Where(x => x.Id == configuredCashboxId && x.Type == configuredCashboxType)
+                .Select(x => new { x.Id, x.Type })
+                .FirstOrDefaultAsync(cancellationToken)
+            : await _context.CheckDefs.AsNoTracking()
+                .Where(x => x.IsSelect)
+                .OrderBy(x => x.Id)
+                .Select(x => new { x.Id, x.Type })
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? await _context.CheckDefs.AsNoTracking()
+                    .OrderBy(x => x.Id)
+                    .Select(x => new { x.Id, x.Type })
+                    .FirstOrDefaultAsync(cancellationToken);
+
+        if (cashbox is null)
         {
             return StatusCode(500, ApiResponse<WebOrderCreatedResponse>.ErrorResult(
-                "WEB_ORDER_CONFIGURATION_MISSING",
-                "تنظیمات ثبت سفارش وب‌سایت کامل نیست. WebOrderIdSandogh و WebOrderSanadType را در server.config.txt تنظیم کنید."));
+                "WEB_ORDER_CASHBOX_NOT_CONFIGURED",
+                "هیچ صندوق معتبری برای ثبت سفارش پیدا نشد. در KianStore یک صندوق معتبر/انتخاب‌شده تعریف کنید یا WebOrderIdSandogh و WebOrderIdSandoghType را در server.config.txt تنظیم کنید."));
         }
 
         var mobile = request.Mobile.Trim();
         if (mobile.Length == 0)
             return BadRequest(ApiResponse<WebOrderCreatedResponse>.ErrorResult("INVALID_MOBILE", "شماره موبایل الزامی است."));
 
-        // Never trust price values sent by the browser. The existing document service
-        // uses KianStore's current MabFrosh when UnitPrice is null.
+        // Collapse duplicate product rows and validate stock before creating the document.
         var uniqueItems = request.Items
             .GroupBy(x => x.IdKala.Trim(), StringComparer.OrdinalIgnoreCase)
             .Select(g => new CreateWebOrderItem
@@ -87,14 +106,11 @@ public sealed class WebOrdersController : ControllerBase
         if (!customer.Success || customer.Data == null)
         {
             var nameParts = request.Name.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            var firstName = nameParts.ElementAtOrDefault(0) ?? request.Name.Trim();
-            var lastName = nameParts.ElementAtOrDefault(1) ?? string.Empty;
-
             var createCustomer = await _customerService.CreateCustomerAsync(new CreateCustomerRequest
             {
                 PersonType = 1,
-                FirstName = firstName,
-                LastName = lastName,
+                FirstName = nameParts.ElementAtOrDefault(0) ?? request.Name.Trim(),
+                LastName = nameParts.ElementAtOrDefault(1) ?? string.Empty,
                 Mobile = mobile,
                 Phone = request.Phone,
                 Address = request.Address
@@ -116,8 +132,8 @@ public sealed class WebOrdersController : ControllerBase
             IdTaraf = customer.Data!.Id,
             IdTarafType = 2,
             IdMasool = idMasool,
-            IdSandogh = idSandogh,
-            IdSandoghType = idSandoghType,
+            IdSandogh = cashbox.Id,
+            IdSandoghType = cashbox.Type,
             SabtDate = DateTime.Now.ToString("yyyy/MM/dd"),
             Des = "سفارش ثبت‌شده از وب‌سایت",
             Sharh = request.Description,
@@ -126,6 +142,8 @@ public sealed class WebOrdersController : ControllerBase
             {
                 IdKala = x.IdKala,
                 Quantity = x.Quantity,
+                // Never accept a browser-supplied price. The document service uses
+                // the current authoritative KianStore price when this is null.
                 UnitPrice = null,
                 IsIncoming = false
             }).ToList()
