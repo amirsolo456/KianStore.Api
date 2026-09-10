@@ -1,0 +1,61 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches:
+      - feature/webstore-api
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore KianStore.Api.csproj
+
+      - name: Build
+        run: dotnet build KianStore.Api.csproj -c Release --no-restore
+
+      - name: Publish single-file EXE
+        run: >-
+          dotnet publish KianStore.Api.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o publish
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item publish/KianStore.Api.exe artifact/KianStore.Api.exe
+          Copy-Item appsettings.json artifact/appsettings.example.json
+          Copy-Item -Recurse Database artifact/Database
+          @'
+          اجرای سرور:
+          1. appsettings.json را در کنار EXE قرار دهید و ConnectionStrings:KianStore را تنظیم کنید.
+          2. اسکریپت Database/WebStore.sql را یک بار روی KianStore_2 اجرا کنید.
+          3. سپس KianStore.Api.exe را اجرا کنید.
+          4. API روی پورت 5069 اجرا می‌شود.
+          '@ | Set-Content artifact/README-SERVER.txt -Encoding UTF8
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KianStore.Api-win-x64
+          path: artifact
+          retention-days: 7
