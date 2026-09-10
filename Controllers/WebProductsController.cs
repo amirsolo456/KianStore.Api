@@ -17,10 +17,12 @@ namespace KianStore.Api.Controllers;
 public sealed class WebProductsController : ControllerBase
 {
     private readonly KianStoreDbContext _context;
+    private readonly IConfiguration _configuration;
 
-    public WebProductsController(KianStoreDbContext context)
+    public WebProductsController(KianStoreDbContext context, IConfiguration configuration)
     {
         _context = context;
+        _configuration = configuration;
     }
 
     [HttpGet]
@@ -170,7 +172,7 @@ public sealed class WebProductsController : ControllerBase
 
     private SqlConnection CreateConnection()
     {
-        var connectionString = _context.Database.GetConnectionString("KianStore");
+        var connectionString = _configuration.GetConnectionString("KianStore");
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new InvalidOperationException("KianStore connection string is not configured.");
         return new SqlConnection(connectionString);
