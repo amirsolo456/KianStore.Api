@@ -6,6 +6,7 @@ public sealed class CreateWebOrderRequest
 {
     [Required, StringLength(120)] public string Name { get; init; } = null!;
     [Required, StringLength(20)] public string Mobile { get; init; } = null!;
+    [Required, StringLength(64)] public string VerificationChallenge { get; init; } = null!;
     [StringLength(50)] public string? Phone { get; init; }
     [StringLength(500)] public string? Address { get; init; }
     [StringLength(700)] public string? Description { get; init; }
