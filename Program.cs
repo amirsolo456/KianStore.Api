@@ -44,6 +44,7 @@ builder.WebHost.UseUrls($"http://{bindAddress}:{port}");
 builder.Configuration["ConnectionStrings:KianStore"] = connectionString;
 builder.Configuration["Sms:Provider"] = serverConfig.GetValueOrDefault("SmsProvider", "HttpSmsProvider");
 builder.Configuration["Sms:SendUrl"] = serverConfig.GetValueOrDefault("SmsSendUrl", string.Empty);
+builder.Configuration["Sms:VerifyLookupUrl"] = serverConfig.GetValueOrDefault("SmsVerifyLookupUrl", string.Empty);
 builder.Configuration["Sms:ApiKey"] = serverConfig.GetValueOrDefault("SmsApiKey", string.Empty);
 builder.Configuration["Sms:Sender"] = serverConfig.GetValueOrDefault("SmsSender", string.Empty);
 builder.Configuration["WebOrderOtpTemplate"] = serverConfig.GetValueOrDefault("WebOrderOtpTemplate", "VerifyLookup");
