@@ -51,9 +51,9 @@ builder.Configuration["WebOrderOtpTemplate"] = serverConfig.GetValueOrDefault("W
 builder.Configuration["WebOrderOtpTtlSeconds"] = serverConfig.GetValueOrDefault("WebOrderOtpTtlSeconds", "300");
 builder.Configuration["WebOrderOtpResendSeconds"] = serverConfig.GetValueOrDefault("WebOrderOtpResendSeconds", "60");
 
-// Website checkout settings. These values are deployment-specific and must be kept in server.config.txt.
 builder.Configuration["WebOrder:IdSal"] = serverConfig.GetValueOrDefault("WebOrderIdSal", "1405");
 builder.Configuration["WebOrder:SanadType"] = serverConfig.GetValueOrDefault("WebOrderSanadType", "12");
+builder.Configuration["WebOrder:PendingSanadType"] = serverConfig.GetValueOrDefault("WebOrderPendingSanadType", "7");
 builder.Configuration["WebOrder:IdAnbar"] = serverConfig.GetValueOrDefault("WebOrderIdAnbar", "1");
 builder.Configuration["WebOrder:IdMasool"] = serverConfig.GetValueOrDefault("WebOrderIdMasool", "101");
 builder.Configuration["WebOrder:IdSandogh"] = serverConfig.GetValueOrDefault("WebOrderIdSandogh", "0");
@@ -79,7 +79,9 @@ builder.Services.AddScoped<IStockRepository, StockRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IStockService, StockService>();
-builder.Services.AddScoped<IDocumentService, LegacyDocumentService>();
+builder.Services.AddScoped<LegacyDocumentService>();
+builder.Services.AddScoped<IDocumentService, PendingAwareDocumentService>();
+builder.Services.AddScoped<PendingWebOrderService>();
 builder.Services.AddScoped<DiscountCodeService>();
 builder.Services.AddScoped<SmsService>();
 builder.Services.AddSingleton<OrderOtpService>();
