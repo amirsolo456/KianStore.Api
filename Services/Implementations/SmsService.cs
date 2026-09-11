@@ -23,6 +23,7 @@ public sealed class SmsService
     public async Task<object> GetConfigurationStatusAsync()
     {
         var url = _configuration["Sms:SendUrl"]?.Trim();
+        var verifyUrl = _configuration["Sms:VerifyLookupUrl"]?.Trim();
         var apiKey = _configuration["Sms:ApiKey"]?.Trim();
         var provider = _configuration["Sms:Provider"]?.Trim();
         var sender = _configuration["Sms:Sender"]?.Trim();
@@ -32,6 +33,7 @@ public sealed class SmsService
             configured = !string.IsNullOrWhiteSpace(apiKey),
             provider = string.IsNullOrWhiteSpace(provider) ? "HttpSmsProvider" : provider,
             hasSendUrl = !string.IsNullOrWhiteSpace(url),
+            hasVerifyLookupUrl = !string.IsNullOrWhiteSpace(verifyUrl),
             hasApiKey = !string.IsNullOrWhiteSpace(apiKey),
             hasSender = !string.IsNullOrWhiteSpace(sender)
         };
@@ -95,7 +97,7 @@ public sealed class SmsService
     }
 
     // Kavenegar VerifyLookup sender for website order OTP.
-    // Uses the API key already loaded by Program.cs from server.config.txt.
+    // Provider URL is configured manually in server.config.txt.
     public async Task<(bool Success, string Message, string? ProviderMessageId)> SendVerifyLookupAsync(
         string mobile,
         string token,
@@ -104,7 +106,9 @@ public sealed class SmsService
     {
         mobile = NormalizeMobile(mobile);
         token = (token ?? string.Empty).Trim();
-        template = string.IsNullOrWhiteSpace(template) ? "VerifyLookup" : template.Trim();
+        template = string.IsNullOrWhiteSpace(template)
+            ? (_configuration["WebOrderOtpTemplate"]?.Trim() ?? "VerifyLookup")
+            : template.Trim();
 
         if (string.IsNullOrWhiteSpace(mobile))
             return (false, "شماره موبایل معتبر نیست.", null);
@@ -115,7 +119,15 @@ public sealed class SmsService
         if (string.IsNullOrWhiteSpace(apiKey))
             return (false, "کلید API کاوه‌نگار در server.config.txt تنظیم نشده است.", null);
 
-        var url = $"https://api.kavenegar.com/v1/{Uri.EscapeDataString(apiKey)}/verify/lookup.json";
+        var configuredUrl = _configuration["Sms:VerifyLookupUrl"]?.Trim();
+        if (string.IsNullOrWhiteSpace(configuredUrl))
+            return (false, "آدرس VerifyLookup کاوه‌نگار در server.config.txt تنظیم نشده است.", null);
+
+        var url = configuredUrl.Replace(
+            "{API_KEY}",
+            Uri.EscapeDataString(apiKey),
+            StringComparison.OrdinalIgnoreCase);
+
         var client = _httpClientFactory.CreateClient("SmsProvider");
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
