@@ -89,8 +89,8 @@ public sealed class WebOrdersControllerV2 : ControllerBase
                 return BadRequest(ApiResponse<WebOrderCreatedResponse>.ErrorResult("INVALID_QUANTITY", "تعداد کالا باید بیشتر از صفر باشد."));
         }
 
-        // وب فقط کالا و مشتری را اعتبارسنجی می‌کند؛ موجودی بررسی نمی‌شود.
-        // سفارش با نوع سند 7 (در انتظار تأیید) ساخته می‌شود تا در اپ موبایل نمایش داده شود.
+        // Website orders deliberately skip stock validation. They are created as
+        // pending SanadType=7 so the existing mobile "فاکتورهای وبسایت" view can show them.
         var kalaIds = uniqueItems.Select(x => x.IdKala).ToArray();
         var kalas = await _context.Kalas.AsNoTracking()
             .Where(x => kalaIds.Contains(x.Id) && !x.IsDisabled)
