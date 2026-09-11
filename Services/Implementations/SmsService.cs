@@ -29,7 +29,7 @@ public sealed class SmsService
 
         return new
         {
-            configured = !string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(apiKey),
+            configured = !string.IsNullOrWhiteSpace(apiKey),
             provider = string.IsNullOrWhiteSpace(provider) ? "HttpSmsProvider" : provider,
             hasSendUrl = !string.IsNullOrWhiteSpace(url),
             hasApiKey = !string.IsNullOrWhiteSpace(apiKey),
@@ -92,6 +92,92 @@ public sealed class SmsService
                 error = log.ErrorMessage
             };
         }
+    }
+
+    // Kavenegar VerifyLookup sender for website order OTP.
+    // Uses the API key already loaded by Program.cs from server.config.txt.
+    public async Task<(bool Success, string Message, string? ProviderMessageId)> SendVerifyLookupAsync(
+        string mobile,
+        string token,
+        string template,
+        CancellationToken ct = default)
+    {
+        mobile = NormalizeMobile(mobile);
+        token = (token ?? string.Empty).Trim();
+        template = string.IsNullOrWhiteSpace(template) ? "VerifyLookup" : template.Trim();
+
+        if (string.IsNullOrWhiteSpace(mobile))
+            return (false, "شماره موبایل معتبر نیست.", null);
+        if (string.IsNullOrWhiteSpace(token) || token.Any(char.IsWhiteSpace))
+            return (false, "کد اعتبارسنجی معتبر نیست.", null);
+
+        var apiKey = _configuration["Sms:ApiKey"]?.Trim();
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return (false, "کلید API کاوه‌نگار در server.config.txt تنظیم نشده است.", null);
+
+        var url = $"https://api.kavenegar.com/v1/{Uri.EscapeDataString(apiKey)}/verify/lookup.json";
+        var client = _httpClientFactory.CreateClient("SmsProvider");
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["receptor"] = mobile,
+                ["token"] = token,
+                ["template"] = template
+            })
+        };
+
+        using var response = await client.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+
+        int? status = null;
+        string? message = null;
+        string? messageId = null;
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            var root = json.RootElement;
+
+            if (root.TryGetProperty("return", out var ret))
+            {
+                if (ret.TryGetProperty("status", out var s) && s.TryGetInt32(out var parsed))
+                    status = parsed;
+                if (ret.TryGetProperty("message", out var m))
+                    message = m.GetString();
+            }
+
+            if (root.TryGetProperty("entries", out var entries))
+            {
+                if (entries.ValueKind == JsonValueKind.Array && entries.GetArrayLength() > 0)
+                    messageId = ReadJsonString(entries[0], "messageid");
+                else if (entries.ValueKind == JsonValueKind.Object)
+                    messageId = ReadJsonString(entries, "messageid");
+            }
+        }
+        catch (JsonException)
+        {
+            // Non-JSON response: HTTP status below determines success/failure.
+        }
+
+        if (!response.IsSuccessStatusCode || (status.HasValue && status.Value != 200))
+        {
+            var detail = message ?? $"کد پاسخ سرویس: {(status?.ToString() ?? ((int)response.StatusCode).ToString())}";
+            return (false, $"ارسال کد تأیید ناموفق بود: {detail}", messageId);
+        }
+
+        return (true, "کد تأیید ارسال شد.", messageId);
+    }
+
+    private static string? ReadJsonString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var value)) return null;
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.ToString(),
+            _ => null
+        };
     }
 
     public async Task<IReadOnlyList<object>> GetLogsAsync(int? personId = null, CancellationToken ct = default)
