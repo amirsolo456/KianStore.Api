@@ -16,5 +16,17 @@ CorsAllowedOrigins=
 # SMS - Kavenegar
 SmsProvider=Kavenegar
 SmsSendUrl=https://api.kavenegar.com/v1/{API_KEY}/sms/send.json
+SmsVerifyLookupUrl=https://api.kavenegar.com/v1/{API_KEY}/verify/lookup.json
 SmsApiKey=
 SmsSender=
+WebOrderOtpTemplate=VerifyLookup
+WebOrderOtpTtlSeconds=300
+WebOrderOtpResendSeconds=60
+
+# Website checkout / legacy document defaults
+WebOrderIdSal=1405
+WebOrderSanadType=12
+WebOrderIdAnbar=1
+WebOrderIdMasool=101
+WebOrderIdSandogh=0
+WebOrderIdSandoghType=0
