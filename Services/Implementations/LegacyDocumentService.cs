@@ -98,9 +98,6 @@ public sealed class LegacyDocumentService : IDocumentService
         {
             var header = await CreateHeaderAsync(request, transaction, cancellationToken);
 
-            // Keep the API-selected warehouse/cashbox values in the header. The
-            // detail procedure still calculates its legacy warehouse defaults,
-            // which is required for compatibility with the old application.
             await ExecuteTextAsync(
                 "UPDATE dbo.Sanad SET IDAnbar=@idAnbar, IDAnbar2=@idAnbar2, IDSandogh=@idSandogh, IDSandoghType=@idSandoghType WHERE IDSal=@idSal AND ID=@id",
                 transaction,
@@ -117,7 +114,7 @@ public sealed class LegacyDocumentService : IDocumentService
                 var product = products[item.IdKala.Trim()];
                 var unitPrice = item.UnitPrice ?? (item.IsIncoming ? product.MabKharid : product.MabFrosh);
 
-                await AddDetailAsync(
+                var detailId2 = await AddDetailAsync(
                     request,
                     header.IdSal,
                     header.Id,
@@ -125,6 +122,21 @@ public sealed class LegacyDocumentService : IDocumentService
                     unitPrice,
                     transaction,
                     cancellationToken);
+
+                // For a sale, preserve the purchase cost that was actually applicable
+                // to this exact sale line. We reuse the existing legacy column
+                // SanadDetail.BedMabKharid instead of introducing a new business table/column.
+                if (!item.IsIncoming && item.PurchasePrice.HasValue)
+                {
+                    await ExecuteTextAsync(
+                        "UPDATE dbo.SanadDetail SET BedMabKharid=@purchasePrice WHERE IDSal=@idSal AND IDSanad=@idSanad AND ID2=@id2",
+                        transaction,
+                        cancellationToken,
+                        new SqlParameter("@purchasePrice", SqlDbType.Decimal) { Precision = 18, Scale = 3, Value = item.PurchasePrice.Value },
+                        new SqlParameter("@idSal", SqlDbType.Int) { Value = header.IdSal },
+                        new SqlParameter("@idSanad", SqlDbType.VarChar, 10) { Value = header.Id },
+                        new SqlParameter("@id2", SqlDbType.Int) { Value = detailId2 });
+                }
             }
 
             var finalized = await FinalizeAsync(
@@ -317,7 +329,7 @@ public sealed class LegacyDocumentService : IDocumentService
         return (createdIdSal, createdId, createdFactor);
     }
 
-    private static async Task AddDetailAsync(
+    private static async Task<int> AddDetailAsync(
         CreateDocumentRequest request,
         int idSal,
         string idSanad,
@@ -352,6 +364,7 @@ public sealed class LegacyDocumentService : IDocumentService
         command.Parameters.Add(new SqlParameter("@Des3", SqlDbType.VarChar, 200) { Value = "" });
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+        return Convert.ToInt32(id2.Value);
     }
 
     private static async Task<(bool IsSavedFinal, string ErrorMessage)> FinalizeAsync(
@@ -488,7 +501,8 @@ public sealed class LegacyDocumentService : IDocumentService
                 Quantity = x.Bed2 > 0 ? x.Bed2 : x.Bes2,
                 IsIncoming = x.Bed2 > 0,
                 UnitPrice = x.Bed2 > 0 ? x.BedMab2 : x.BesMab2,
-                TotalAmount = x.SumMab
+                TotalAmount = x.SumMab,
+                PurchasePrice = x.BedMabKharid
             }).ToList()
         };
     }
