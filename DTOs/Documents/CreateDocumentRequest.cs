@@ -18,13 +18,10 @@ public sealed class CreateDocumentRequest
     [StringLength(200)] public string? Des { get; init; }
     [StringLength(700)] public string? Sharh { get; init; }
     public bool CheckStock { get; init; } = true;
-
-    // کد(های) مصرف‌شده در همین فاکتور؛ ترتیب اعمال همان ترتیب لیست است.
+    public bool IsPending { get; init; }
+    [StringLength(50)] public string? SefareshID { get; init; }
     public List<ApplyDiscountCodeRequest> DiscountCodes { get; init; } = new();
-
-    // صدور کد خصوصی برای خرید بعدی، بعد از ثبت موفق این فاکتور.
     public IssueNextPurchaseDiscountRequest? NextPurchaseDiscount { get; init; }
-
     [MinLength(1)] public List<CreateDocumentItemRequest> Items { get; init; } = new();
 }
 
@@ -33,11 +30,7 @@ public sealed class CreateDocumentItemRequest
     [Required, StringLength(20)] public string IdKala { get; init; } = null!;
     [Range(typeof(decimal), "0.001", "79228162514264337593543950335")] public decimal Quantity { get; init; }
     [Range(typeof(decimal), "0", "79228162514264337593543950335")] public decimal? UnitPrice { get; init; }
-
-    // قیمت خرید هر واحد برای همین ردیف فروش؛ برای محاسبه سود از همین مقدار استفاده می‌شود.
-    // در صورت ارسال نشدن، Backend برای سازگاری با کلاینت‌های قدیمی از قیمت خرید کالا استفاده می‌کند.
     [Range(typeof(decimal), "0", "79228162514264337593543950335")] public decimal? PurchasePrice { get; init; }
-
     public bool IsIncoming { get; init; }
     [StringLength(200)] public string? Description { get; init; }
 }
