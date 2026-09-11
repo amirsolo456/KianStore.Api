@@ -46,6 +46,9 @@ builder.Configuration["Sms:Provider"] = serverConfig.GetValueOrDefault("SmsProvi
 builder.Configuration["Sms:SendUrl"] = serverConfig.GetValueOrDefault("SmsSendUrl", string.Empty);
 builder.Configuration["Sms:ApiKey"] = serverConfig.GetValueOrDefault("SmsApiKey", string.Empty);
 builder.Configuration["Sms:Sender"] = serverConfig.GetValueOrDefault("SmsSender", string.Empty);
+builder.Configuration["WebOrderOtpTemplate"] = serverConfig.GetValueOrDefault("WebOrderOtpTemplate", "VerifyLookup");
+builder.Configuration["WebOrderOtpTtlSeconds"] = serverConfig.GetValueOrDefault("WebOrderOtpTtlSeconds", "300");
+builder.Configuration["WebOrderOtpResendSeconds"] = serverConfig.GetValueOrDefault("WebOrderOtpResendSeconds", "60");
 
 // Website checkout settings. These values are deployment-specific and must be kept in server.config.txt.
 builder.Configuration["WebOrder:IdSal"] = serverConfig.GetValueOrDefault("WebOrderIdSal", "1405");
@@ -78,6 +81,7 @@ builder.Services.AddScoped<IStockService, StockService>();
 builder.Services.AddScoped<IDocumentService, LegacyDocumentService>();
 builder.Services.AddScoped<DiscountCodeService>();
 builder.Services.AddScoped<SmsService>();
+builder.Services.AddSingleton<OrderOtpService>();
 
 var configuredOrigins = serverConfig.GetValueOrDefault("CorsAllowedOrigins", string.Empty)
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
