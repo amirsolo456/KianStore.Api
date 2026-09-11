@@ -2,6 +2,7 @@ using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Customers;
 using KianStore.Api.DTOs.Documents;
+using KianStore.Api.DTOs.Orders;
 using KianStore.Api.DTOs.WebOrders;
 using KianStore.Api.Services.Interfaces;
 using KianStore.Api.Services.Implementations;
@@ -12,9 +13,11 @@ namespace KianStore.Api.Controllers;
 
 [ApiController]
 [Route("api/web/orders")]
+[Route("api/web-orders")]
 public sealed class WebOrdersControllerV2 : ControllerBase
 {
     private const int PendingSanadType = 7;
+    private const int FinalSaleSanadType = 12;
 
     private readonly KianStoreDbContext _context;
     private readonly ICustomerService _customerService;
@@ -86,8 +89,18 @@ public sealed class WebOrdersControllerV2 : ControllerBase
                 return BadRequest(ApiResponse<WebOrderCreatedResponse>.ErrorResult("INVALID_QUANTITY", "تعداد کالا باید بیشتر از صفر باشد."));
         }
 
-        // سفارش وب ابتدا به‌عنوان سند «در انتظار تأیید» ثبت می‌شود.
-        // موجودی در وب‌سایت بررسی نمی‌شود؛ بررسی موجودی در مرحله تأیید داخل اپ موبایل انجام می‌شود.
+        // وب فقط کالا و مشتری را اعتبارسنجی می‌کند؛ موجودی بررسی نمی‌شود.
+        // سفارش با نوع سند 7 (در انتظار تأیید) ساخته می‌شود تا در اپ موبایل نمایش داده شود.
+        var kalaIds = uniqueItems.Select(x => x.IdKala).ToArray();
+        var kalas = await _context.Kalas.AsNoTracking()
+            .Where(x => kalaIds.Contains(x.Id) && !x.IsDisabled)
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var missingProduct = uniqueItems.FirstOrDefault(x => !kalas.ContainsKey(x.IdKala));
+        if (missingProduct is not null)
+            return NotFound(ApiResponse<WebOrderCreatedResponse>.ErrorResult(
+                "PRODUCT_NOT_FOUND", $"کالا با شناسه {missingProduct.IdKala} یافت نشد."));
+
         var customer = await _customerService.GetByMobileAsync(mobile);
         if (!customer.Success || customer.Data == null)
         {
@@ -149,12 +162,140 @@ public sealed class WebOrdersControllerV2 : ControllerBase
                 IdTaraf = document.Data.IdTaraf,
                 TotalAmount = document.Data.TotalAmount
             },
-            "سفارش با موفقیت ثبت شد و در انتظار تأیید پرسنل قرار گرفت."));
+            "سفارش در سند در انتظار تأیید ثبت شد."));
     }
 
-    private static string BuildOrderNumber(DateTime utcNow)
-        => $"W{utcNow:yyyyMMddHHmmssfff}";
+    [HttpGet("pending")]
+    public async Task<ActionResult<ApiResponse<object>>> GetPending(CancellationToken cancellationToken = default)
+    {
+        var sanads = await _context.Sanads.AsNoTracking()
+            .Where(x => x.SanadType == PendingSanadType && !x.Disable)
+            .OrderBy(x => x.SabtDate)
+            .ThenBy(x => x.IdFaktor)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        if (sanads.Count == 0)
+            return Ok(ApiResponse<object>.SuccessResult(Array.Empty<object>(), "سند در انتظار تأیید وجود ندارد."));
+
+        var ids = sanads.Select(x => x.Id).ToList();
+        var details = await _context.SanadDetails.AsNoTracking()
+            .Where(x => ids.Contains(x.IdSanad))
+            .OrderBy(x => x.IdSanad)
+            .ThenBy(x => x.Id2)
+            .ToListAsync(cancellationToken);
+
+        var kalaIds = details.Select(x => x.IdKala).Distinct().ToList();
+        var kalas = await _context.Kalas.AsNoTracking()
+            .Where(x => kalaIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var tarafIds = sanads.Select(x => x.IdTaraf).Distinct().ToList();
+        var tarafs = await _context.Tarafs.AsNoTracking()
+            .Where(x => tarafIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+
+        var lookup = details.ToLookup(x => x.IdSanad);
+        var result = sanads.Select(s => new
+        {
+            s.IdSal,
+            s.Id,
+            OrderNumber = s.SefareshID ?? $"S{s.IdFaktor}",
+            s.IdFaktor,
+            s.SanadType,
+            s.IdAnbar,
+            s.IdTaraf,
+            s.IdTarafType,
+            TarafName = tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name,
+            SabtDate = s.SabtDate,
+            TotalAmount = s.MabKol,
+            Description = s.Des,
+            Items = lookup[s.Id].Select(d => new
+            {
+                Id = d.Id2,
+                d.IdKala,
+                KalaName = kalas.TryGetValue(d.IdKala, out var k) ? k.KalaName : d.IdKala,
+                Quantity = d.Bes2,
+                UnitPrice = d.BesMab2,
+                TotalPrice = d.SumMab,
+                PurchasePrice = d.BedMabKharid
+            })
+        }).ToList();
+
+        return Ok(ApiResponse<object>.SuccessResult(result, "فاکتورهای وب در انتظار تأیید دریافت شد."));
+    }
+
+    [HttpPost("{orderNumber}/finalize")]
+    public async Task<ActionResult<ApiResponse<object>>> Finalize(
+        string orderNumber,
+        [FromBody] WebPendingOrderFinalizeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Items is null || request.Items.Count == 0)
+            return BadRequest(ApiResponse<object>.ErrorResult("PURCHASE_PRICES_REQUIRED", "قیمت خرید اقلام الزامی است."));
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        var sanad = await _context.Sanads.FirstOrDefaultAsync(
+            x => x.SefareshID == orderNumber && x.SanadType == PendingSanadType && !x.Disable,
+            cancellationToken);
+
+        if (sanad is null)
+        {
+            var alreadyFinal = await _context.Sanads.AsNoTracking().AnyAsync(
+                x => x.SefareshID == orderNumber && x.SanadType == FinalSaleSanadType && !x.Disable,
+                cancellationToken);
+
+            if (alreadyFinal)
+                return Conflict(ApiResponse<object>.ErrorResult("ORDER_ALREADY_FINALIZED", "این سند قبلاً تأیید شده است."));
+
+            return NotFound(ApiResponse<object>.ErrorResult("ORDER_NOT_FOUND", "سند وب در انتظار تأیید یافت نشد."));
+        }
+
+        var details = await _context.SanadDetails
+            .Where(x => x.IdSal == sanad.IdSal && x.IdSanad == sanad.Id)
+            .OrderBy(x => x.Id2)
+            .ToListAsync(cancellationToken);
+
+        var prices = request.Items
+            .Where(x => !string.IsNullOrWhiteSpace(x.KalaId))
+            .GroupBy(x => x.KalaId.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.Last().PurchasePrice, StringComparer.OrdinalIgnoreCase);
+
+        var missingPrices = details
+            .Where(x => !prices.TryGetValue(x.IdKala, out var p) || p <= 0)
+            .Select(x => x.IdKala)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (missingPrices.Count > 0)
+            return BadRequest(ApiResponse<object>.ErrorResult(
+                "PURCHASE_PRICES_REQUIRED", "برای همه اقلام قیمت خرید واحد وارد شود.", new { KalaIds = missingPrices }));
+
+        foreach (var detail in details)
+        {
+            detail.BedMabKharid = prices[detail.IdKala];
+            detail.SanadType = FinalSaleSanadType;
+        }
+
+        sanad.SanadType = FinalSaleSanadType;
+        sanad.IsFinal = true;
+        sanad.IsSavedFinal = true;
+        if (!string.IsNullOrWhiteSpace(request.SabtDate)) sanad.SabtDate = request.SabtDate;
+        if (!string.IsNullOrWhiteSpace(request.Des)) sanad.Des = request.Des;
+        if (!string.IsNullOrWhiteSpace(request.Sharh)) sanad.Sharh = request.Sharh;
+
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return Ok(ApiResponse<object>.SuccessResult(
+            new { sanad.IdSal, sanad.Id, sanad.IdFaktor, sanad.SanadType, sanad.IsFinal },
+            "همان سند با موفقیت تأیید و نهایی شد."));
+    }
 
     private int GetInt(string key, int fallback)
         => int.TryParse(_configuration[key], out var value) ? value : fallback;
+
+    private static string BuildOrderNumber(DateTime utcNow)
+        => $"W{utcNow:yyyyMMddHHmmssfff}";
 }
