@@ -100,6 +100,7 @@ public sealed class DocumentService : IDocumentService
         {
             var product = products[item.IdKala];
             var unitPrice = item.UnitPrice ?? product.MabFrosh;
+            var purchaseUnitPrice = item.PurchasePrice ?? product.MabKharid;
             var lineTotal = unitPrice * item.Quantity;
             total += lineTotal;
             details.Add(new SanadDetail
@@ -107,7 +108,8 @@ public sealed class DocumentService : IDocumentService
                 IdSal = request.IdSal, IdSanad = sanadId, Id2 = row++, AtfNum = null, IdKala = product.Id,
                 Bed = item.IsIncoming ? (double)item.Quantity : 0, Bes = item.IsIncoming ? 0 : (double)item.Quantity,
                 BedMab = item.IsIncoming ? unitPrice : 0, BesMab = item.IsIncoming ? 0 : unitPrice, Des = item.Description,
-                SumMab = lineTotal, IdAnbar = request.IdAnbar, IdKalaType = product.KalaType, BedMabKharid = product.MabKharid,
+                SumMab = lineTotal, IdAnbar = request.IdAnbar, IdKalaType = product.KalaType,
+                BedMabKharid = purchaseUnitPrice,
                 Maliat = 0, Maliat1 = false, Maliat2 = false, TakhfifDarsad = 0, PorsantDarsad = 0, HazKala = 0, HazKalaKharid = 0,
                 IdSanjesh = product.IdSanjesh, IdSanjesh2 = product.IdSanjesh2, BedBesZarib = 1, SanadType = request.SanadType,
                 PropKala = null, PropKala2 = null, Des1 = null, Des2 = null, Des3 = null, SumBed = null, SumBes = null,
@@ -194,7 +196,9 @@ public sealed class DocumentService : IDocumentService
             Items = details.Select(x => new DocumentItemResponse
             {
                 Id2 = x.Id2, IdKala = x.IdKala, Quantity = x.Bed2 > 0 ? x.Bed2 : x.Bes2,
-                IsIncoming = x.Bed2 > 0, UnitPrice = x.Bed2 > 0 ? x.BedMab2 : x.BesMab2, TotalAmount = x.SumMab
+                IsIncoming = x.Bed2 > 0, UnitPrice = x.Bed2 > 0 ? x.BedMab2 : x.BesMab2,
+                PurchasePrice = x.BedMabKharid,
+                TotalAmount = x.SumMab
             }).ToList()
         };
     }
