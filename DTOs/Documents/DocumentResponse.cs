@@ -28,5 +28,6 @@ public sealed class DocumentItemResponse
     public double Quantity { get; init; }
     public bool IsIncoming { get; init; }
     public decimal UnitPrice { get; init; }
+    public decimal PurchasePrice { get; init; }
     public decimal TotalAmount { get; init; }
 }
