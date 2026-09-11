@@ -66,4 +66,49 @@ public class CustomersController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>
+    /// Returns the existing customer for a mobile number or creates the customer immediately.
+    /// This is used by the website as the single entry point for customer identification.
+    /// </summary>
+    [HttpPost("ensure-by-mobile")]
+    public async Task<ActionResult<ApiResponse<CustomerResponse>>> EnsureByMobile(
+        [FromBody] CreateCustomerRequest request)
+    {
+        var mobile = request.Mobile?.Trim();
+        if (string.IsNullOrWhiteSpace(mobile))
+        {
+            return BadRequest(ApiResponse<CustomerResponse>.ErrorResult(
+                "INVALID_MOBILE",
+                "شماره موبایل الزامی است."));
+        }
+
+        var existing = await _customerService.GetByMobileAsync(mobile);
+        if (existing.Success && existing.Data != null)
+            return Ok(existing);
+
+        var created = await _customerService.CreateCustomerAsync(new CreateCustomerRequest
+        {
+            PersonType = request.PersonType,
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            CompanyName = request.CompanyName,
+            Mobile = mobile,
+            Phone = request.Phone,
+            Address = request.Address
+        });
+
+        if (!created.Success)
+        {
+            // A second simultaneous request may have created the customer between
+            // the lookup and insert. Resolve that race by reading the customer again.
+            var raceWinner = await _customerService.GetByMobileAsync(mobile);
+            if (raceWinner.Success && raceWinner.Data != null)
+                return Ok(raceWinner);
+
+            return BadRequest(created);
+        }
+
+        return Ok(created);
+    }
 }
