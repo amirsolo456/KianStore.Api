@@ -12,9 +12,7 @@ public sealed class DocumentService : IDocumentService
 {
     private readonly KianStoreDbContext _context;
     private readonly IStockService _stockService;
-
-    public DocumentService(KianStoreDbContext context, IStockService stockService)
-    { _context = context; _stockService = stockService; }
+    public DocumentService(KianStoreDbContext context, IStockService stockService) { _context = context; _stockService = stockService; }
 
     public async Task<ApiResponse<DocumentResponse>> CreateAsync(CreateDocumentRequest request, CancellationToken cancellationToken = default)
     {
@@ -38,7 +36,7 @@ public sealed class DocumentService : IDocumentService
             if (!item.IsIncoming && request.CheckStock)
             {
                 var stock = await _stockService.CheckAsync(item.IdKala, item.Quantity, request.IdAnbar, request.IdSal, cancellationToken);
-                if (!stock.IsAvailable) stockWarnings.Add(new { code = "INSUFFICIENT_STOCK", message = $"موجودی کالای {item.IdKala} کافی نیست.", stock.KalaId, stock.IdAnbar, stock.IdSal, stock.Requested, stock.Available, stock.IsAvailable });
+                if (!stock.IsAvailable) stockWarnings.Add(new { code="INSUFFICIENT_STOCK", message=$"موجودی کالای {item.IdKala} کافی نیست.", stock.KalaId, stock.IdAnbar, stock.IdSal, stock.Requested, stock.Available, stock.IsAvailable });
             }
         }
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
@@ -57,10 +55,10 @@ public sealed class DocumentService : IDocumentService
             IDTaraf2=request.IdTaraf, HMarketID=0, IDRef="", SanadTypeRef=0, IDRefRecive="", FroshArzesh=null, TakhfifKalaArzesh=null, HMaliat1=null, HMaliat2=null, TejaratCode=null, StateMaliat=0, SabtDateOrg=request.SabtDate,
             MabBonKart=0, MabBonKartTakhfif=0, Takhfif1=0, IDTarafTahator=request.IdTaraf, TasviehRozSum=null, IDSanadAtf=null, MabFroshCalNaghd=null, MabCalNaghd=null, MabKarMozd=null, MabTahator=null, SumMabEzafatMoaf=null, IDState=null, CodeMaliat=null, IsTasviehFaktor=null, TasviehMab=null
         };
-        var details = new List<SanadDetail>(); decimal total=0; var row=1;
-        foreach (var item in request.Items)
+        var details=new List<SanadDetail>(); decimal total=0; var row=1;
+        foreach(var item in request.Items)
         {
-            var product=products[item.IdKala]; var unitPrice=item.UnitPrice ?? product.MabFrosh; var purchaseUnitPrice=item.PurchasePrice ?? product.MabKharid; var lineTotal=unitPrice*item.Quantity; total+=lineTotal;
+            var product=products[item.IdKala]; var unitPrice=item.UnitPrice??product.MabFrosh; var purchaseUnitPrice=request.IsPending?0:(item.PurchasePrice??product.MabKharid); var lineTotal=unitPrice*item.Quantity; total+=lineTotal;
             details.Add(new SanadDetail
             {
                 IdSal=request.IdSal, IdSanad=sanadId, Id2=row++, AtfNum=null, IdKala=product.Id, Bed=item.IsIncoming?(double)item.Quantity:0, Bes=item.IsIncoming?0:(double)item.Quantity, BedMab=item.IsIncoming?unitPrice:0, BesMab=item.IsIncoming?0:unitPrice, Des=item.Description,
@@ -75,7 +73,6 @@ public sealed class DocumentService : IDocumentService
         _context.Sanads.Add(sanad); _context.SanadDetails.AddRange(details); await _context.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
         var response=Map(sanad,details); if(stockWarnings.Count>0) return ApiResponse<DocumentResponse>.SuccessWithWarningResult(response,stockWarnings,"سند ثبت شد، اما موجودی یک یا چند کالا کافی نبود.","STOCK_WARNING"); return ApiResponse<DocumentResponse>.SuccessResult(response,"سند با موفقیت ثبت شد.");
     }
-
     public async Task<ApiResponse<DocumentResponse>> GetAsync(int idSal,string id,CancellationToken cancellationToken=default)
     { var sanad=await _context.Sanads.AsNoTracking().FirstOrDefaultAsync(x=>x.IdSal==idSal&&x.Id==id,cancellationToken); if(sanad==null) throw new ApiException(404,"DOCUMENT_NOT_FOUND","سند مورد نظر یافت نشد."); var details=await _context.SanadDetails.AsNoTracking().Where(x=>x.IdSal==idSal&&x.IdSanad==id).OrderBy(x=>x.Id2).ToListAsync(cancellationToken); var tarafName=await _context.Tarafs.AsNoTracking().Where(x=>x.Id==sanad.IdTaraf&&x.IdType==sanad.IdTarafType).Select(x=>x.Name).FirstOrDefaultAsync(cancellationToken); return ApiResponse<DocumentResponse>.SuccessResult(Map(sanad,details,tarafName)); }
     public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(int idSal,int sanadType=12,int page=1,int pageSize=30,CancellationToken cancellationToken=default)
