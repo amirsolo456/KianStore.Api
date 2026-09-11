@@ -24,8 +24,9 @@ WebOrderOtpTtlSeconds=300
 WebOrderOtpResendSeconds=60
 
 # Website checkout / legacy document defaults
+# Website orders are pending documents and must stay on SanadType=7 so the mobile app can display them.
 WebOrderIdSal=1405
-WebOrderSanadType=12
+WebOrderSanadType=7
 WebOrderIdAnbar=1
 WebOrderIdMasool=101
 WebOrderIdSandogh=0
