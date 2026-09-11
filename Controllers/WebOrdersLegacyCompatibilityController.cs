@@ -1,22 +1,21 @@
 using KianStore.Api.Common;
 using KianStore.Api.Data;
-using KianStore.Api.Models.KianStore;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace KianStore.Api.Controllers;
 
 /// <summary>
-/// Compatibility endpoints used by the mobile app's "فاکتورهای وبسایت" screen.
-/// Website orders are stored in the existing Sanad/SanadDetail tables; no new
-/// web-order tables are created.
+/// Compatibility endpoints used by the mobile app's website-invoices screen.
+/// Website orders are stored in existing Sanad/SanadDetail tables as pending
+/// sales (SanadType 7) and become normal sales (SanadType 12) only after staff approval.
 /// </summary>
 [ApiController]
 [Route("api/web-orders")]
 public sealed class WebOrdersLegacyCompatibilityController : ControllerBase
 {
-    private const int WebsiteSaleSanadType = 12;
-    private const string WebsiteDescription = "سفارش ثبت‌شده از وب‌سایت";
+    private const int PendingWebsiteSanadType = 7;
+    private const int FinalSaleSanadType = 12;
 
     private readonly KianStoreDbContext _context;
 
@@ -29,37 +28,30 @@ public sealed class WebOrdersLegacyCompatibilityController : ControllerBase
     public async Task<ActionResult<ApiResponse<object>>> GetPending(CancellationToken cancellationToken = default)
     {
         var sanads = await _context.Sanads.AsNoTracking()
-            .Where(x => x.SanadType == WebsiteSaleSanadType &&
-                        !x.Disable &&
-                        x.Des != null &&
-                        x.Des.Contains(WebsiteDescription))
-            .OrderByDescending(x => x.IdFaktor)
-            .ThenByDescending(x => x.Id)
+            .Where(x => x.SanadType == PendingWebsiteSanadType && !x.Disable && !x.IsFinal)
+            .OrderBy(x => x.SabtDate)
+            .ThenBy(x => x.IdFaktor)
             .Take(100)
             .ToListAsync(cancellationToken);
 
         if (sanads.Count == 0)
-            return Ok(ApiResponse<object>.SuccessResult(Array.Empty<object>(), "فاکتور وبسایتی وجود ندارد."));
+            return Ok(ApiResponse<object>.SuccessResult(Array.Empty<object>(), "فاکتور وبسایتی در انتظار تأیید وجود ندارد."));
 
         var ids = sanads.Select(x => x.Id).ToList();
         var idSal = sanads[0].IdSal;
-
         var details = await _context.SanadDetails.AsNoTracking()
             .Where(x => x.IdSal == idSal && ids.Contains(x.IdSanad))
-            .OrderBy(x => x.IdSanad)
-            .ThenBy(x => x.Id2)
+            .OrderBy(x => x.IdSanad).ThenBy(x => x.Id2)
             .ToListAsync(cancellationToken);
 
         var kalaIds = details.Select(x => x.IdKala).Distinct().ToList();
         var kalas = await _context.Kalas.AsNoTracking()
             .Where(x => kalaIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken);
-
         var tarafIds = sanads.Select(x => x.IdTaraf).Distinct().ToList();
         var tarafs = await _context.Tarafs.AsNoTracking()
             .Where(x => tarafIds.Contains(x.Id))
             .ToListAsync(cancellationToken);
-
         var lookup = details.ToLookup(x => x.IdSanad);
 
         var result = sanads.Select(s => new
@@ -67,7 +59,7 @@ public sealed class WebOrdersLegacyCompatibilityController : ControllerBase
             id = s.IdFaktor,
             idSal = s.IdSal,
             idSanad = s.Id,
-            orderNumber = $"S{s.IdFaktor}",
+            orderNumber = s.SefareshID ?? $"S{s.IdFaktor}",
             idFaktor = s.IdFaktor,
             sanadType = s.SanadType,
             idAnbar = s.IdAnbar,
@@ -100,26 +92,17 @@ public sealed class WebOrdersLegacyCompatibilityController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(orderNumber))
             return BadRequest(ApiResponse<object>.ErrorResult("INVALID_ORDER_NUMBER", "شماره سفارش معتبر نیست."));
-
-        if (request.Items is null || request.Items.Count == 0)
+        if (request.Items.Count == 0)
             return BadRequest(ApiResponse<object>.ErrorResult("PURCHASE_PRICES_REQUIRED", "قیمت خرید اقلام الزامی است."));
 
-        var factorId = ParseFactor(orderNumber);
-        if (!factorId.HasValue)
-            return BadRequest(ApiResponse<object>.ErrorResult("INVALID_ORDER_NUMBER", "شماره سفارش وب معتبر نیست."));
-
-        var sanad = await _context.Sanads
-            .FirstOrDefaultAsync(x => x.IdFaktor == factorId.Value &&
-                                      x.SanadType == WebsiteSaleSanadType &&
-                                      !x.Disable &&
-                                      x.Des != null &&
-                                      x.Des.Contains(WebsiteDescription), cancellationToken);
-
-        if (sanad is null)
-            return NotFound(ApiResponse<object>.ErrorResult("ORDER_NOT_FOUND", "فاکتور وبسایت پیدا نشد."));
+        var pending = await _context.Sanads.FirstOrDefaultAsync(
+            x => x.SefareshID == orderNumber && x.SanadType == PendingWebsiteSanadType && !x.Disable && !x.IsFinal,
+            cancellationToken);
+        if (pending is null)
+            return NotFound(ApiResponse<object>.ErrorResult("ORDER_NOT_FOUND", "فاکتور وب در انتظار تأیید پیدا نشد."));
 
         var details = await _context.SanadDetails
-            .Where(x => x.IdSal == sanad.IdSal && x.IdSanad == sanad.Id)
+            .Where(x => x.IdSal == pending.IdSal && x.IdSanad == pending.Id)
             .OrderBy(x => x.Id2)
             .ToListAsync(cancellationToken);
 
@@ -128,41 +111,36 @@ public sealed class WebOrdersLegacyCompatibilityController : ControllerBase
             .GroupBy(x => x.KalaId.Trim(), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.Last().PurchasePrice, StringComparer.OrdinalIgnoreCase);
 
-        var missing = details
-            .Where(x => !prices.TryGetValue(x.IdKala, out var price) || price <= 0)
-            .Select(x => x.IdKala)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
+        var missing = details.Where(x => !prices.TryGetValue(x.IdKala, out var price) || price <= 0)
+            .Select(x => x.IdKala).Distinct().ToList();
         if (missing.Count > 0)
-            return BadRequest(ApiResponse<object>.ErrorResult(
-                "PURCHASE_PRICES_REQUIRED",
-                "برای همه اقلام قیمت خرید واحد وارد شود.",
-                new { KalaIds = missing }));
+            return BadRequest(ApiResponse<object>.ErrorResult("PURCHASE_PRICES_REQUIRED", "برای همه اقلام قیمت خرید واحد وارد شود.", new { KalaIds = missing }));
 
+        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
         foreach (var detail in details)
+        {
             detail.BedMabKharid = prices[detail.IdKala];
+            detail.SanadType = FinalSaleSanadType;
+        }
+
+        pending.SanadType = FinalSaleSanadType;
+        pending.IsFinal = true;
+        pending.IsSavedFinal = true;
+        if (!string.IsNullOrWhiteSpace(request.SabtDate)) pending.SabtDate = request.SabtDate!;
+        if (!string.IsNullOrWhiteSpace(request.Des)) pending.Des = request.Des;
+        if (!string.IsNullOrWhiteSpace(request.Sharh)) pending.Sharh = request.Sharh;
 
         await _context.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
 
-        return Ok(ApiResponse<object>.SuccessResult(
-            new
-            {
-                sanad.IdSal,
-                sanad.Id,
-                sanad.IdFaktor,
-                sanad.SanadType,
-                isFinal = sanad.IsFinal || sanad.IsSavedFinal
-            },
-            "قیمت خرید اقلام با موفقیت ثبت شد."));
-    }
-
-    private static int? ParseFactor(string orderNumber)
-    {
-        var value = orderNumber.Trim();
-        if (value.StartsWith("S", StringComparison.OrdinalIgnoreCase))
-            value = value[1..];
-        return int.TryParse(value, out var result) && result > 0 ? result : null;
+        return Ok(ApiResponse<object>.SuccessResult(new
+        {
+            pending.IdSal,
+            pending.Id,
+            pending.IdFaktor,
+            pending.SanadType,
+            isFinal = pending.IsFinal
+        }, "سفارش وب با موفقیت تأیید و نهایی شد."));
     }
 }
 
