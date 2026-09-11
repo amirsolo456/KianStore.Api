@@ -17,20 +17,17 @@ public sealed class WebOrdersControllerV2 : ControllerBase
     private readonly KianStoreDbContext _context;
     private readonly ICustomerService _customerService;
     private readonly IDocumentService _documentService;
-    private readonly IStockService _stockService;
     private readonly IConfiguration _configuration;
 
     public WebOrdersControllerV2(
         KianStoreDbContext context,
         ICustomerService customerService,
         IDocumentService documentService,
-        IStockService stockService,
         IConfiguration configuration)
     {
         _context = context;
         _customerService = customerService;
         _documentService = documentService;
-        _stockService = stockService;
         _configuration = configuration;
     }
 
@@ -88,13 +85,10 @@ public sealed class WebOrdersControllerV2 : ControllerBase
         {
             if (item.Quantity <= 0)
                 return BadRequest(ApiResponse<WebOrderCreatedResponse>.ErrorResult("INVALID_QUANTITY", "تعداد کالا باید بیشتر از صفر باشد."));
-
-            var stock = await _stockService.CheckAsync(item.IdKala, item.Quantity, idAnbar, idSal, cancellationToken);
-            if (!stock.IsAvailable)
-                return Conflict(ApiResponse<WebOrderCreatedResponse>.ErrorResult(
-                    "INSUFFICIENT_STOCK", $"موجودی کالای {item.IdKala} کافی نیست. موجودی قابل فروش: {stock.Available}."));
         }
 
+        // موجودی در وب‌سایت هنگام ثبت سفارش بررسی نمی‌شود.
+        // بررسی موجودی در مرحله تأیید سفارش توسط پرسنل/اپ موبایل انجام می‌شود.
         var customer = await _customerService.GetByMobileAsync(mobile);
         if (!customer.Success || customer.Data == null)
         {
@@ -129,7 +123,9 @@ public sealed class WebOrdersControllerV2 : ControllerBase
             SabtDate = DateTime.Now.ToString("yyyy/MM/dd"),
             Des = "سفارش ثبت‌شده از وب‌سایت",
             Sharh = request.Description,
-            CheckStock = true,
+            // ثبت سفارش وب‌سایت نباید به خاطر کمبود موجودی رد شود.
+            // تأیید/کنترل موجودی بعداً توسط پرسنل در اپ موبایل انجام می‌شود.
+            CheckStock = false,
             Items = uniqueItems.Select(x => new CreateDocumentItemRequest
             {
                 IdKala = x.IdKala,
