@@ -12,12 +12,16 @@ public sealed class CreateDocumentRequest
     [Range(0, int.MaxValue)] public int IdTarafType { get; init; } = 2;
     [Range(1, int.MaxValue)] public int IdMasool { get; init; } = 101;
     [Range(1, int.MaxValue)] public int? IdFaktor { get; init; }
-    [Range(1, int.MaxValue)] public int IdSandogh { get; init; }
+    [Range(0, int.MaxValue)] public int IdSandogh { get; init; }
     [Range(0, int.MaxValue)] public int IdSandoghType { get; init; }
     [Required, StringLength(10)] public string SabtDate { get; init; } = null!;
     [StringLength(200)] public string? Des { get; init; }
     [StringLength(700)] public string? Sharh { get; init; }
     public bool CheckStock { get; init; } = true;
+    // Website orders can be created as pending documents. Pending documents are
+    // visible to staff for review and must not affect stock until finalized.
+    public bool IsPending { get; init; }
+    [StringLength(50)] public string? SefareshID { get; init; }
 
     public List<ApplyDiscountCodeRequest> DiscountCodes { get; init; } = new();
     public IssueNextPurchaseDiscountRequest? NextPurchaseDiscount { get; init; }
