@@ -3,7 +3,7 @@ name: Build Windows EXE
 on:
   push:
     branches:
-      - feature/webstore-api
+      - master
   workflow_dispatch:
 
 jobs:
