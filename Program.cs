@@ -36,6 +36,56 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+// SanadType=113 (فروش از انبار همکار) is a valid document type. Some existing
+// databases have a legacy CK_Sanad_SanadType constraint that does not include
+// 113. Extend that exact predicate instead of weakening/removing the check.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<KianStoreDbContext>();
+    const string sql = @"
+IF OBJECT_ID(N'dbo.Sanad', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dbo.SanadType WHERE ID = 113)
+    BEGIN
+        INSERT INTO dbo.SanadType
+        (
+            ID, SanadTypeName, AnbarCaption, ToCaption, TarafType, BedBesType,
+            ByAnbar, ByMali, Disable, IDFaktorAuto, SanadTypeMabna,
+            SanadTypeMabna2, SanadTypeMabna3, IsAllowNoMabna,
+            Emzae1, Emzae2, Emzae3, Emzae4
+        )
+        SELECT
+            113, N'فروش از انبار همکار', AnbarCaption, ToCaption, TarafType, BedBesType,
+            ByAnbar, ByMali, Disable, IDFaktorAuto, SanadTypeMabna,
+            SanadTypeMabna2, SanadTypeMabna3, IsAllowNoMabna,
+            Emzae1, Emzae2, Emzae3, Emzae4
+        FROM dbo.SanadType
+        WHERE ID = 12;
+    END;
+
+    DECLARE @definition nvarchar(max);
+    SELECT @definition = cc.definition
+    FROM sys.check_constraints AS cc
+    WHERE cc.name = N'CK_Sanad_SanadType'
+      AND cc.parent_object_id = OBJECT_ID(N'dbo.Sanad');
+
+    IF @definition IS NOT NULL
+       AND @definition NOT LIKE N'%[[]SanadType[]] = 113%'
+       AND @definition NOT LIKE N'%SanadType = 113%'
+    BEGIN
+        DECLARE @sql nvarchar(max);
+        SET @sql = N'ALTER TABLE dbo.Sanad DROP CONSTRAINT [CK_Sanad_SanadType];';
+        EXEC sys.sp_executesql @sql;
+
+        SET @sql = N'ALTER TABLE dbo.Sanad ADD CONSTRAINT [CK_Sanad_SanadType] CHECK ('
+                 + @definition + N' OR [SanadType] = 113);';
+        EXEC sys.sp_executesql @sql;
+    END;
+END;";
+    db.Database.ExecuteSqlRaw(sql);
+}
+
 app.UseMiddleware<GlobalExceptionMiddleware>();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); } else { app.UseHttpsRedirection(); }
 app.UseCors("FlutterWeb");
