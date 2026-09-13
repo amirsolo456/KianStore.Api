@@ -320,7 +320,7 @@ public sealed class DocumentService : IDocumentService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var sanads = await _context.Sanads.AsNoTracking()
-            .Where(x => x.IdSal == idSal && x.SanadType == sanadType && !x.Disable && x.SefareshID != null && x.SefareshID != "")
+            .Where(x => x.IdSal == idSal && x.SanadType == sanadType && !x.Disable)
             .OrderByDescending(x => x.IdFaktor)
             .ThenByDescending(x => x.Id)
             .Skip((page - 1) * pageSize)
@@ -328,7 +328,7 @@ public sealed class DocumentService : IDocumentService
             .ToListAsync(cancellationToken);
 
         if (sanads.Count == 0)
-            return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(Array.Empty<DocumentResponse>(), "تاریخچه فاکتورهای وب خالی است.");
+            return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(Array.Empty<DocumentResponse>(), "تاریخچه فروش خالی است.");
 
         var sanadIds = sanads.Select(x => x.Id).ToList();
         var details = await _context.SanadDetails.AsNoTracking().Where(x => x.IdSal == idSal && sanadIds.Contains(x.IdSanad)).OrderBy(x => x.IdSanad).ThenBy(x => x.Id2).ToListAsync(cancellationToken);
@@ -336,7 +336,7 @@ public sealed class DocumentService : IDocumentService
         var tarafs = await _context.Tarafs.AsNoTracking().Where(x => tarafIds.Contains(x.Id)).ToListAsync(cancellationToken);
         var detailLookup = details.ToLookup(x => x.IdSanad);
         var result = sanads.Select(s => Map(s, detailLookup[s.Id].ToList(), tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name)).ToList();
-        return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(result, "تاریخچه فاکتورهای وب با موفقیت دریافت شد.");
+        return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(result, "تاریخچه فروش با موفقیت دریافت شد.");
     }
 
     private async Task<string> GenerateSanadIdAsync(int idSal, CancellationToken cancellationToken)
