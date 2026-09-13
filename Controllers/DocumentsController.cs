@@ -11,166 +11,102 @@ namespace KianStore.Api.Controllers;
 [Route("api/documents")]
 public sealed class DocumentsController : ControllerBase
 {
+    private const int PartnerSaleType = 113;
     private readonly IDocumentService _documentService;
+    private readonly IDocumentMutationService _mutationService;
+    private readonly ISanadAuditService _auditService;
 
-    public DocumentsController(IDocumentService documentService)
+    public DocumentsController(IDocumentService documentService, IDocumentMutationService mutationService, ISanadAuditService auditService)
     {
         _documentService = documentService;
+        _mutationService = mutationService;
+        _auditService = auditService;
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(
-        [FromBody] CreateDocumentRequest request,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> Create([FromBody] CreateDocumentRequest request, CancellationToken cancellationToken)
     {
         var result = await _documentService.CreateAsync(request, cancellationToken);
-
-        if (!result.Success || result.Data == null)
-            return StatusCode(201, result);
-
+        if (!result.Success || result.Data == null) return StatusCode(201, result);
         var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, cancellationToken);
-
         if (!persisted.Success || persisted.Data == null)
-        {
-            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult(
-                "DOCUMENT_RESPONSE_LOAD_FAILED",
-                "سند ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود."));
-        }
-
-        return StatusCode(201, new ApiResponse<DocumentResponse>
-        {
-            Success = true,
-            Code = result.Code,
-            Message = result.Message,
-            Data = persisted.Data,
-            Errors = result.Errors,
-            Warnings = result.Warnings,
-            TraceId = result.TraceId
-        });
+            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_RESPONSE_LOAD_FAILED", "سند ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود."));
+        return StatusCode(201, new ApiResponse<DocumentResponse> { Success = true, Code = result.Code, Message = result.Message, Data = persisted.Data, Errors = result.Errors, Warnings = result.Warnings, TraceId = result.TraceId });
     }
 
     [HttpPost("purchase")]
-    public async Task<IActionResult> CreatePurchase(
-        [FromBody] JsonElement body,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> CreatePurchase([FromBody] JsonElement body, CancellationToken cancellationToken)
     {
-        if (body.ValueKind != JsonValueKind.Object)
-            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
-                "INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
-
-        var requestObject = JsonNode.Parse(body.GetRawText())?.AsObject();
-        if (requestObject == null)
-            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
-                "INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
-
-        requestObject["sanadType"] = 11;
-
-        var request = requestObject.Deserialize<CreateDocumentRequest>(
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-
-        if (request == null)
-            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
-                "INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
-
+        var request = DeserializeForced(body, 11, "اطلاعات سند خرید معتبر نیست.");
+        if (request == null) return BadRequest(ApiResponse<DocumentResponse>.ErrorResult("INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
         var result = await _documentService.CreateAsync(request, cancellationToken);
-
-        if (!result.Success || result.Data == null)
-            return StatusCode(201, result);
-
-        var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, cancellationToken);
-
-        if (!persisted.Success || persisted.Data == null)
-        {
-            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult(
-                "DOCUMENT_RESPONSE_LOAD_FAILED",
-                "سند خرید ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود."));
-        }
-
-        return StatusCode(201, new ApiResponse<DocumentResponse>
-        {
-            Success = true,
-            Code = result.Code,
-            Message = result.Message,
-            Data = persisted.Data,
-            Errors = result.Errors,
-            Warnings = result.Warnings,
-            TraceId = result.TraceId
-        });
+        return await CreatedResponseAsync(result, cancellationToken, "سند خرید ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود.");
     }
 
-    // Partner-warehouse sale documents use SanadType=15.
-    // They are sales whose goods are shipped from a partner warehouse, so
-    // the client's own warehouse stock must never be checked or reduced.
     [HttpPost("partner-sale")]
-    public async Task<IActionResult> CreatePartnerSale(
-        [FromBody] JsonElement body,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> CreatePartnerSale([FromBody] JsonElement body, CancellationToken cancellationToken)
     {
-        if (body.ValueKind != JsonValueKind.Object)
-            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
-                "INVALID_REQUEST", "اطلاعات فروش از انبار همکار معتبر نیست."));
-
-        var requestObject = JsonNode.Parse(body.GetRawText())?.AsObject();
-        if (requestObject == null)
-            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
-                "INVALID_REQUEST", "اطلاعات فروش از انبار همکار معتبر نیست."));
-
-        requestObject["sanadType"] = 15;
-        requestObject["checkStock"] = false;
-        requestObject["isPending"] = false;
-
-        var request = requestObject.Deserialize<CreateDocumentRequest>(
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-
-        if (request == null)
-            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
-                "INVALID_REQUEST", "اطلاعات فروش از انبار همکار معتبر نیست."));
-
+        var request = DeserializeForced(body, PartnerSaleType, "اطلاعات فروش از انبار همکار معتبر نیست.");
+        if (request == null) return BadRequest(ApiResponse<DocumentResponse>.ErrorResult("INVALID_REQUEST", "اطلاعات فروش از انبار همکار معتبر نیست."));
+        request = new CreateDocumentRequest
+        {
+            IdSal = request.IdSal, SanadType = PartnerSaleType, IdAnbar = request.IdAnbar, IdTaraf = request.IdTaraf, IdTarafType = request.IdTarafType,
+            IdMasool = request.IdMasool, IdFaktor = request.IdFaktor, IdSandogh = request.IdSandogh, IdSandoghType = request.IdSandoghType,
+            SabtDate = request.SabtDate, Des = request.Des, Sharh = request.Sharh, CheckStock = false, IsPending = false,
+            SefareshID = request.SefareshID, DiscountCodes = request.DiscountCodes, NextPurchaseDiscount = request.NextPurchaseDiscount, Items = request.Items
+        };
         var result = await _documentService.CreateAsync(request, cancellationToken);
+        var response = await CreatedResponseAsync(result, cancellationToken, "فروش ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود.");
+        if (response is ObjectResult { Value: ApiResponse<DocumentResponse> api } && api.Success && api.Data != null)
+            await _auditService.RecordAsync(api.Data, GetCurrentUserId(request.IdMasool), "CREATE", "ثبت سند فروش از انبار همکار", cancellationToken);
+        return response;
+    }
 
-        if (!result.Success || result.Data == null)
-            return StatusCode(201, result);
+    [HttpPut("partner-sale/{idSal:int}/{id}")]
+    public async Task<IActionResult> UpdatePartnerSale(int idSal, string id, [FromBody] CreateDocumentRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mutationService.UpdatePartnerSaleAsync(idSal, id, request, GetCurrentUserId(request.IdMasool), cancellationToken);
+        return Ok(result);
+    }
 
-        var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, cancellationToken);
-
-        if (!persisted.Success || persisted.Data == null)
-        {
-            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult(
-                "DOCUMENT_RESPONSE_LOAD_FAILED",
-                "فروش ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود."));
-        }
-
-        return StatusCode(201, new ApiResponse<DocumentResponse>
-        {
-            Success = true,
-            Code = result.Code,
-            Message = result.Message,
-            Data = persisted.Data,
-            Errors = result.Errors,
-            Warnings = result.Warnings,
-            TraceId = result.TraceId
-        });
+    [HttpDelete("partner-sale/{idSal:int}/{id}")]
+    public async Task<IActionResult> DeletePartnerSale(int idSal, string id, CancellationToken cancellationToken)
+    {
+        var result = await _mutationService.DeletePartnerSaleAsync(idSal, id, GetCurrentUserId(null), cancellationToken);
+        return Ok(result);
     }
 
     [HttpGet("history")]
-    public async Task<IActionResult> History(
-        [FromQuery] int idSal,
-        [FromQuery] int sanadType = 12,
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 30,
-        CancellationToken cancellationToken = default)
-    {
-        var result = await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, cancellationToken);
-        return Ok(result);
-    }
+    public async Task<IActionResult> History([FromQuery] int idSal, [FromQuery] int sanadType = 12, [FromQuery] int page = 1, [FromQuery] int pageSize = 30, CancellationToken cancellationToken = default)
+        => Ok(await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, cancellationToken));
 
     [HttpGet("{idSal:int}/{id}")]
-    public async Task<IActionResult> Get(
-        int idSal,
-        string id,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> Get(int idSal, string id, CancellationToken cancellationToken)
+        => Ok(await _documentService.GetAsync(idSal, id, cancellationToken));
+
+    private CreateDocumentRequest? DeserializeForced(JsonElement body, int sanadType, string message)
     {
-        var result = await _documentService.GetAsync(idSal, id, cancellationToken);
-        return Ok(result);
+        if (body.ValueKind != JsonValueKind.Object) return null;
+        var obj = JsonNode.Parse(body.GetRawText())?.AsObject();
+        if (obj == null) return null;
+        obj["sanadType"] = sanadType;
+        var request = obj.Deserialize<CreateDocumentRequest>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        return request;
+    }
+
+    private async Task<IActionResult> CreatedResponseAsync(ApiResponse<DocumentResponse> result, CancellationToken ct, string loadError)
+    {
+        if (!result.Success || result.Data == null) return StatusCode(201, result);
+        var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, ct);
+        if (!persisted.Success || persisted.Data == null)
+            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_RESPONSE_LOAD_FAILED", loadError));
+        return StatusCode(201, new ApiResponse<DocumentResponse> { Success = true, Code = result.Code, Message = result.Message, Data = persisted.Data, Errors = result.Errors, Warnings = result.Warnings, TraceId = result.TraceId });
+    }
+
+    private int? GetCurrentUserId(int? fallback)
+    {
+        if (Request.Headers.TryGetValue("X-User-Id", out var raw) && int.TryParse(raw.FirstOrDefault(), out var userId) && userId > 0)
+            return userId;
+        return fallback;
     }
 }
