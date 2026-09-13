@@ -10,7 +10,6 @@ namespace KianStore.Api.Controllers;
 [Route("api/reports/profit")]
 public sealed class ProfitReportsController : ControllerBase
 {
-    private const int PartnerSaleType = 113;
     private readonly KianStoreDbContext _context;
 
     public ProfitReportsController(KianStoreDbContext context) => _context = context;
@@ -35,15 +34,12 @@ public sealed class ProfitReportsController : ControllerBase
                 "INVALID_DATE_RANGE",
                 "تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد."));
 
-        // فروش عادی: 12 و 15
-        // فروش از انبار همکار: 113
-        // هر سه نوع باید در گزارش سود محاسبه شوند.
         // SabtDate is stored as fixed-width yyyy/MM/dd. string.Compare is used
         // here because EF Core translates it for SQL Server; CompareOrdinal was
         // not translated by the provider and caused the report endpoint to fail.
         var details = await _context.SanadDetails.AsNoTracking()
             .Where(d => d.IdSal == idSal &&
-                        (d.SanadType == 12 || d.SanadType == 15 || d.SanadType == PartnerSaleType) &&
+                        (d.SanadType == 12 || d.SanadType == 15) &&
                         d.Bes2 > 0)
             .Join(
                 _context.Sanads.AsNoTracking(),
