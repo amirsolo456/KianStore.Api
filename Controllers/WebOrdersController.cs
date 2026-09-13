@@ -14,7 +14,9 @@ namespace KianStore.Api.Controllers;
 [Route("api/web-orders")]
 public sealed class WebOrdersController : ControllerBase
 {
-    private const int PendingSanadType = 7;
+    // KianStore uses SanadType=51 as the temporary/pending state that is later
+    // consumed by SetFaktorFinalNew and converted to the final sale type (12).
+    private const int PendingSanadType = 51;
     private const int FinalSaleSanadType = 12;
 
     private readonly KianStoreDbContext _context;
@@ -188,9 +190,6 @@ public sealed class WebOrdersController : ControllerBase
                 "سال مالی جاری در دیتابیس پیدا نشد."));
         }
 
-        // Only web-created pending orders are returned. The old implementation
-        // returned every type-7 record and took the OLDEST 100 rows, which could
-        // hide new website orders completely when the pending table grew.
         var sanads = await _context.Sanads
             .AsNoTracking()
             .Where(x =>
@@ -301,6 +300,9 @@ public sealed class WebOrdersController : ControllerBase
 
         try
         {
+            // Keep the document at type 51 until SetFaktorFinalNew runs.
+            // That procedure explicitly looks for SanadType=51 and performs
+            // the official transition to the final sale type (12).
             var sanad = await _context.Sanads
                 .FirstOrDefaultAsync(
                     x => x.SefareshID == orderNumber &&
@@ -368,10 +370,10 @@ public sealed class WebOrdersController : ControllerBase
             foreach (var detail in details)
             {
                 detail.BedMabKharid = prices[detail.IdKala];
-                detail.SanadType = FinalSaleSanadType;
+                detail.SanadType = PendingSanadType;
             }
 
-            sanad.SanadType = FinalSaleSanadType;
+            sanad.SanadType = PendingSanadType;
             sanad.IsFinal = false;
             sanad.IsSavedFinal = false;
 
@@ -384,8 +386,6 @@ public sealed class WebOrdersController : ControllerBase
 
             await _context.SaveChangesAsync(cancellationToken);
 
-            // Use KianStore's own finalization procedure so IDSanad, totals and
-            // IsSavedFinal follow the database's established accounting rules.
             await FinalizeWithKianStoreProcedureAsync(
                 sanad.IdSal,
                 sanad.Id,
