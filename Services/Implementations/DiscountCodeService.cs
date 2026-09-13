@@ -89,10 +89,10 @@ public sealed class DiscountCodeService
     {
         if (request.PersonId <= 0)
             throw new ArgumentException("شناسه مشتری برای صدور کد تخفیف الزامی است.");
-        if (request.Value <= 0 || (request.Type == 1 && request.Value > 100))
-            throw new ArgumentException("مقدار تخفیف خرید بعدی نامعتبر است.");
         if (request.Type is < 1 or > 2)
             throw new ArgumentException("نوع تخفیف خرید بعدی نامعتبر است.");
+        if (request.Value <= 0 || (request.Type == 1 && request.Value > 100))
+            throw new ArgumentException("مقدار تخفیف خرید بعدی نامعتبر است.");
         if (request.ValidDays <= 0)
             throw new ArgumentException("مدت اعتبار کد تخفیف باید بیشتر از صفر باشد.");
 
@@ -100,83 +100,82 @@ public sealed class DiscountCodeService
         var endDate = now.AddDays(request.ValidDays);
         await using var tx = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
 
+        var code = string.Empty;
+        var takhfifId = 0;
         for (var attempt = 0; attempt < 10; attempt++)
         {
-            var code = GenerateUniqueCode();
-            if (await _context.DiscountCodes.AnyAsync(x => x.Code == code, ct))
-                continue;
-
-            var takhfifId = (await _context.Takhfifs.MaxAsync(x => (int?)x.Id, ct) ?? 0) + 1;
-            var title = Truncate(request.Title ?? "تخفیف خرید بعدی", 20);
-            var takhfifDarsad = request.Type == 1 ? (double)request.Value : 0d;
-            var minOrderAmount = request.MinOrderAmount ?? 0m;
-
-            await _context.Database.ExecuteSqlInterpolatedAsync($"""
-                INSERT INTO [Takhfif]
-                ([ID],[TakhfifName],[TakhfifDarsad],[ToMab1],[TakhfifDarsad2],[ToMab2],
-                 [SumType],[ByTakhfifKala],[Pelekani],[IDHyperMarket],[IdKalaListEx],[IdKalaListOnly],
-                 [ApplyType],[TasviehType],[IsDisabe],[IDUser],[OrderIndex])
-                VALUES
-                ({takhfifId},{title},{takhfifDarsad},{minOrderAmount},0,0,
-                 0,0,0,0,0,0,0,0,0,0,0)
-                """, ct);
-
-            var entity = new DiscountCode
+            var candidate = GenerateUniqueCode();
+            if (!await _context.DiscountCodes.AnyAsync(x => x.Code == candidate, ct))
             {
-                Code = code,
-                Title = request.Title ?? "تخفیف خرید بعدی",
-                TakhfifId = takhfifId,
-                Type = request.Type,
-                Scope = 2,
-                PersonId = request.PersonId,
-                IssuedForIdSal = idSal,
-                IssuedForIdSanad = idSanad,
-                Value = request.Value,
-                MaxDiscountAmount = request.MaxDiscountAmount,
-                StartDate = now,
-                EndDate = endDate,
-                UsageLimit = 1,
-                UsedCount = 0,
-                PerCustomerLimit = request.PerCustomerLimit ?? 1,
-                IsActive = true,
-                Description = $"کد خرید بعدی مشتری {request.PersonId} برای سند {idSanad} / سال مالی {idSal}",
-                CreatedAt = now
-            };
-
-            try
-            {
-                _context.DiscountCodes.Add(entity);
-                await _context.SaveChangesAsync(ct);
-                await tx.CommitAsync(ct);
-                return new
-                {
-                    entity.Id,
-                    entity.Code,
-                    entity.PersonId,
-                    entity.Scope,
-                    entity.IssuedForIdSal,
-                    entity.IssuedForIdSanad,
-                    entity.Type,
-                    entity.Value,
-                    entity.MinOrderAmount,
-                    entity.MaxDiscountAmount,
-                    entity.StartDate,
-                    entity.EndDate,
-                    entity.UsageLimit,
-                    entity.PerCustomerLimit
-                };
-            }
-            catch (DbUpdateException) when (attempt < 9)
-            {
-                _context.Entry(entity).State = EntityState.Detached;
-                var takhfif = await _context.Takhfifs.FirstOrDefaultAsync(x => x.Id == takhfifId, ct);
-                if (takhfif != null) _context.Entry(takhfif).State = EntityState.Deleted;
-                await _context.SaveChangesAsync(ct);
+                code = candidate;
+                break;
             }
         }
 
-        await tx.RollbackAsync(ct);
-        throw new InvalidOperationException("سیستم نتوانست یک کد تخفیف یکتا تولید کند.");
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            await tx.RollbackAsync(ct);
+            throw new InvalidOperationException("سیستم نتوانست یک کد تخفیف یکتا تولید کند.");
+        }
+
+        takhfifId = (await _context.Takhfifs.MaxAsync(x => (int?)x.Id, ct) ?? 0) + 1;
+        var title = Truncate(request.Title ?? "تخفیف خرید بعدی", 20);
+        var takhfifDarsad = request.Type == 1 ? (double)request.Value : 0d;
+        var minOrderAmount = request.MinOrderAmount ?? 0m;
+
+        await _context.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO [Takhfif]
+            ([ID],[TakhfifName],[TakhfifDarsad],[ToMab1],[TakhfifDarsad2],[ToMab2],
+             [SumType],[ByTakhfifKala],[Pelekani],[IDHyperMarket],[IdKalaListEx],[IdKalaListOnly],
+             [ApplyType],[TasviehType],[IsDisabe],[IDUser],[OrderIndex])
+            VALUES
+            ({takhfifId},{title},{takhfifDarsad},{minOrderAmount},0,0,
+             0,0,0,0,0,0,0,0,0,0,0)
+            """, ct);
+
+        var entity = new DiscountCode
+        {
+            Code = code,
+            Title = request.Title ?? "تخفیف خرید بعدی",
+            TakhfifId = takhfifId,
+            Type = request.Type,
+            Scope = 2,
+            PersonId = request.PersonId,
+            IssuedForIdSal = idSal,
+            IssuedForIdSanad = idSanad,
+            Value = request.Value,
+            MaxDiscountAmount = request.MaxDiscountAmount,
+            StartDate = now,
+            EndDate = endDate,
+            UsageLimit = 1,
+            UsedCount = 0,
+            PerCustomerLimit = request.PerCustomerLimit ?? 1,
+            IsActive = true,
+            Description = $"کد خرید بعدی مشتری {request.PersonId} برای سند {idSanad} / سال مالی {idSal}",
+            CreatedAt = now
+        };
+
+        _context.DiscountCodes.Add(entity);
+        await _context.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        return new
+        {
+            entity.Id,
+            entity.Code,
+            entity.PersonId,
+            entity.Scope,
+            entity.IssuedForIdSal,
+            entity.IssuedForIdSanad,
+            entity.Type,
+            entity.Value,
+            MinOrderAmount = minOrderAmount,
+            entity.MaxDiscountAmount,
+            entity.StartDate,
+            entity.EndDate,
+            entity.UsageLimit,
+            entity.PerCustomerLimit
+        };
     }
 
     public async Task UpdateAsync(int id, UpdateDiscountCodeRequest request, CancellationToken ct = default)
@@ -195,6 +194,7 @@ public sealed class DiscountCodeService
         entity.Type = request.Type;
         entity.Scope = request.Scope;
         entity.PersonId = request.PersonId;
+        entity.Value = request.Value;
         entity.MaxDiscountAmount = request.MaxDiscountAmount;
         entity.StartDate = request.StartDate.ToUniversalTime();
         entity.EndDate = request.EndDate?.ToUniversalTime();
@@ -293,7 +293,6 @@ public sealed class DiscountCodeService
         if (value <= 0 || (type == 1 && value > 100)) throw new ArgumentException("مقدار تخفیف نامعتبر است.");
         if (end.HasValue && end.Value < start) throw new ArgumentException("تاریخ پایان نمی‌تواند قبل از شروع باشد.");
         if (max.HasValue && max.Value < 0) throw new ArgumentException("سقف تخفیف نامعتبر است.");
-        if (start.Kind == DateTimeKind.Unspecified) throw new ArgumentException("تاریخ شروع کد تخفیف معتبر نیست.");
     }
     private static object Result(bool valid, decimal discount, decimal finalAmount, string message) => new { isValid = valid, discountAmount = discount, finalAmount, message };
     private sealed class ValidationResult { public bool IsValid { get; set; } public decimal DiscountAmount { get; set; } public decimal FinalAmount { get; set; } public string Message { get; set; } = ""; }
