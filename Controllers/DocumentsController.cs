@@ -79,8 +79,17 @@ public sealed class DocumentsController : ControllerBase
     [HttpDelete("partner-sale/{idSal:int}/{id}")]
     public async Task<IActionResult> DeletePartnerSale(int idSal, string id, CancellationToken cancellationToken)
     {
-        var result = await _mutationService.DeletePartnerSaleAsync(idSal, id, GetCurrentUserId(null), cancellationToken);
-        return Ok(result);
+        try
+        {
+            var result = await _mutationService.DeletePartnerSaleAsync(idSal, id, GetCurrentUserId(null), cancellationToken);
+            return Ok(result);
+        }
+        catch (ApiException ex) when (ex.Code == "PARTNER_SALE_NOT_FOUND")
+        {
+            // Backward compatibility: older mobile builds used this route for all document types.
+            var result = await _mutationService.DeletePurchaseAsync(idSal, id, GetCurrentUserId(null), cancellationToken);
+            return Ok(result);
+        }
     }
 
     [HttpGet("partner-sale/history")]
