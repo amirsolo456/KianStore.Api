@@ -1,8 +1,10 @@
 using System.Data;
+using System.Text.Json;
 using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Documents;
 using KianStore.Api.DTOs.Orders;
+using KianStore.Api.Services.Implementations;
 using KianStore.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,15 +22,24 @@ public sealed class WebOrdersController : ControllerBase
     private readonly KianStoreDbContext _context;
     private readonly IDocumentService _documentService;
     private readonly IStockService _stockService;
+    private readonly DiscountCodeService _discountCodeService;
+    private readonly SmsService _smsService;
+    private readonly IConfiguration _configuration;
 
     public WebOrdersController(
         KianStoreDbContext context,
         IDocumentService documentService,
-        IStockService stockService)
+        IStockService stockService,
+        DiscountCodeService discountCodeService,
+        SmsService smsService,
+        IConfiguration configuration)
     {
         _context = context;
         _documentService = documentService;
         _stockService = stockService;
+        _discountCodeService = discountCodeService;
+        _smsService = smsService;
+        _configuration = configuration;
     }
 
     [HttpPost]
@@ -118,6 +129,51 @@ public sealed class WebOrdersController : ControllerBase
         if (!document.Success || document.Data is null)
             return StatusCode(500, document);
 
+        // Issue exactly one private code for this customer and this newly registered document.
+        // Defaults are configurable on the server so the website does not need to know the promotion policy.
+        var nextDiscountPercent = _configuration.GetValue<decimal?>("DiscountCode:NextPurchasePercentage") ?? 10m;
+        var nextDiscountDays = _configuration.GetValue<int?>("DiscountCode:NextPurchaseValidDays") ?? 30;
+        var issuedDiscount = await _discountCodeService.IssueNextPurchaseAsync(
+            new DTOs.DiscountCodes.IssueNextPurchaseDiscountRequest
+            {
+                PersonId = request.TarafId.Value,
+                Type = 1,
+                Value = nextDiscountPercent,
+                ValidDays = nextDiscountDays,
+                PerCustomerLimit = 1,
+                Title = "تخفیف خرید بعدی"
+            },
+            document.Data.IdSal,
+            document.Data.Id,
+            cancellationToken);
+
+        var issuedCode = JsonSerializer.SerializeToElement(issuedDiscount)
+            .GetProperty("Code")
+            .GetString()!;
+
+        // Sending the SMS must not roll back a successfully registered order/code.
+        var smsSent = false;
+        try
+        {
+            var customerName = string.IsNullOrWhiteSpace(request.FirstName)
+                ? "مشتری گرامی"
+                : request.FirstName!.Trim();
+            var smsMessage = $"سلام {customerName}، سفارش {orderNumber} ثبت شد. کد تخفیف خرید بعدی شما: {issuedCode} - {nextDiscountPercent:0.##}% تا {nextDiscountDays} روز معتبر است. آریا دام خاتون";
+            var smsResult = await _smsService.SendAsync(new DTOs.Sms.SendSmsRequest
+            {
+                Mobile = request.Mobile,
+                PersonId = request.TarafId.Value,
+                Message = smsMessage
+            }, cancellationToken);
+
+            var smsJson = JsonSerializer.SerializeToElement(smsResult);
+            smsSent = smsJson.TryGetProperty("success", out var successNode) && successNode.ValueKind == JsonValueKind.True;
+        }
+        catch
+        {
+            smsSent = false;
+        }
+
         return Ok(ApiResponse<object>.SuccessResult(new
         {
             document.Data.IdSal,
@@ -125,8 +181,14 @@ public sealed class WebOrdersController : ControllerBase
             document.Data.IdFaktor,
             OrderNumber = orderNumber,
             SanadType = PendingSanadType,
-            document.Data.TotalAmount
-        }, "سفارش مستقیماً به سند در انتظار تأیید ثبت شد."));
+            document.Data.TotalAmount,
+            DiscountCode = issuedCode,
+            DiscountPercent = nextDiscountPercent,
+            DiscountValidDays = nextDiscountDays,
+            SmsSent = smsSent
+        }, smsSent
+            ? "سفارش ثبت شد و کد تخفیف خرید بعدی برای مشتری پیامک شد."
+            : "سفارش ثبت شد و کد تخفیف خرید بعدی صادر شد؛ ارسال پیامک ناموفق بود."));
     }
 
     [HttpGet("pending")]
