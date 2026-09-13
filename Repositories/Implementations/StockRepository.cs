@@ -20,7 +20,7 @@ public sealed class StockRepository : IStockRepository
 
         var calculatedStock = await _context.SanadDetails.AsNoTracking()
             .Where(x => x.IdSal == idSal && x.IdKala == kalaId && x.IdAnbar == idAnbar &&
-                        x.SanadType != 7 && x.SanadType != 16 && x.SanadType != 19)
+                        x.SanadType != 7 && x.SanadType != 15 && x.SanadType != 16 && x.SanadType != 19)
             .Select(x => (double?)(x.Bed2 - x.Bes2))
             .SumAsync(cancellationToken);
         return (decimal)(calculatedStock ?? 0d);
