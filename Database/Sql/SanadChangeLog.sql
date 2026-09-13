@@ -26,6 +26,30 @@ BEGIN
 END
 GO
 
+-- Extend the legacy SanadType CHECK constraint without weakening its existing rule.
+IF OBJECT_ID(N'dbo.Sanad', N'U') IS NOT NULL
+BEGIN
+    DECLARE @definition nvarchar(max);
+    SELECT @definition = cc.definition
+    FROM sys.check_constraints AS cc
+    WHERE cc.name = N'CK_Sanad_SanadType'
+      AND cc.parent_object_id = OBJECT_ID(N'dbo.Sanad');
+
+    IF @definition IS NOT NULL
+       AND @definition NOT LIKE N'%[[]SanadType[]] = 113%'
+       AND @definition NOT LIKE N'%SanadType = 113%'
+    BEGIN
+        DECLARE @sql nvarchar(max);
+        SET @sql = N'ALTER TABLE dbo.Sanad DROP CONSTRAINT [CK_Sanad_SanadType];';
+        EXEC sys.sp_executesql @sql;
+
+        SET @sql = N'ALTER TABLE dbo.Sanad ADD CONSTRAINT [CK_Sanad_SanadType] CHECK ('
+                 + @definition + N' OR [SanadType] = 113);';
+        EXEC sys.sp_executesql @sql;
+    END;
+END
+GO
+
 IF OBJECT_ID(N'dbo.SanadChangeLog', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.SanadChangeLog
