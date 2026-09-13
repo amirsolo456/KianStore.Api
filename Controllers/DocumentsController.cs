@@ -76,6 +76,10 @@ public sealed class DocumentsController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("partner-sale/history")]
+    public async Task<IActionResult> PartnerSaleHistory([FromQuery] int idSal = 0, [FromQuery] int page = 1, [FromQuery] int pageSize = 30, CancellationToken cancellationToken = default)
+        => Ok(await _documentService.GetHistoryAsync(idSal, PartnerSaleType, page, pageSize, cancellationToken));
+
     [HttpGet("history")]
     public async Task<IActionResult> History([FromQuery] int idSal, [FromQuery] int sanadType = 12, [FromQuery] int page = 1, [FromQuery] int pageSize = 30, CancellationToken cancellationToken = default)
         => Ok(await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, cancellationToken));
