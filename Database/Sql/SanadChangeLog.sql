@@ -1,6 +1,31 @@
 USE [KianStore_2]
 GO
 
+-- 113 = فروش از انبار همکار.
+-- The row is cloned from normal sale type 12 so all required accounting flags
+-- are populated consistently; only ID/name are specialized here.
+IF NOT EXISTS (SELECT 1 FROM dbo.SanadType WHERE ID = 113)
+BEGIN
+    INSERT INTO dbo.SanadType
+    (
+        ID, SanadTypeName, AnbarCaption, ToCaption, TarafType, BedBesType,
+        ByAnbar, ByMali, Disable, IDFaktorAuto, SanadTypeMabna,
+        SanadTypeMabna2, SanadTypeMabna3, IsAllowNoMabna,
+        Emzae1, Emzae2, Emzae3, Emzae4
+    )
+    SELECT
+        113, 'فروش از انبار همکار', AnbarCaption, ToCaption, TarafType, BedBesType,
+        ByAnbar, ByMali, Disable, IDFaktorAuto, SanadTypeMabna,
+        SanadTypeMabna2, SanadTypeMabna3, IsAllowNoMabna,
+        Emzae1, Emzae2, Emzae3, Emzae4
+    FROM dbo.SanadType
+    WHERE ID = 12;
+
+    IF @@ROWCOUNT = 0
+        THROW 50001, 'SanadType=12 was not found; cannot initialize SanadType=113 safely.', 1;
+END
+GO
+
 IF OBJECT_ID(N'dbo.SanadChangeLog', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.SanadChangeLog
@@ -25,7 +50,6 @@ BEGIN
 END
 GO
 
--- Examples:
--- 113 = فروش از انبار همکار
--- CREATE is written when the document is created, UPDATE on edit, DELETE on soft-delete.
--- The backend resolves the user from X-User-Id and stores UserName/UserFullName from dbo.Users.
+-- Audit records are written for CREATE, UPDATE and DELETE.
+-- The API reads X-User-Id, resolves the user from dbo.Users,
+-- and stores ID + UserName + UserFLName in SanadChangeLog.
