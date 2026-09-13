@@ -60,4 +60,4 @@ jobs:
           path: artifact
           retention-days: 7
 
-# Build trigger for the latest master revision.
+# Trigger publish after dedicated SanadType 113 history endpoint was added.
