@@ -17,4 +17,9 @@ public interface IDocumentMutationService
         string id,
         int? currentUserId,
         CancellationToken cancellationToken = default);
+
+    Task RecordPartnerSaleCreateAsync(
+        DocumentResponse document,
+        int? currentUserId,
+        CancellationToken cancellationToken = default);
 }
