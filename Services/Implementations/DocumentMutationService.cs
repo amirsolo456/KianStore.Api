@@ -12,6 +12,7 @@ namespace KianStore.Api.Services.Implementations;
 
 public sealed class DocumentMutationService : IDocumentMutationService
 {
+    private const int PurchaseType = 11;
     private const int PartnerSaleType = 113;
     private static readonly SemaphoreSlim AuditSchemaLock = new(1, 1);
     private readonly KianStoreDbContext _context;
@@ -105,6 +106,44 @@ public sealed class DocumentMutationService : IDocumentMutationService
 
             await transaction.CommitAsync(cancellationToken);
             return await LoadResponseAsync(idSal, id, "سند فروش از انبار همکار حذف شد.", cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task<ApiResponse<DocumentResponse>> DeletePurchaseAsync(
+        int idSal,
+        string id,
+        int? currentUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var sanad = await _context.Sanads.FirstOrDefaultAsync(
+            x => x.IdSal == idSal && x.Id == id && x.SanadType == PurchaseType && !x.Disable,
+            cancellationToken);
+
+        if (sanad == null)
+            throw new ApiException(404, "PURCHASE_NOT_FOUND", "سند خرید مورد نظر یافت نشد.");
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            sanad.Disable = true;
+            sanad.IsFinal = false;
+            sanad.IsSavedFinal = false;
+            sanad.ShowInSanad = false;
+            sanad.ShowInFaktor = false;
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            var user = await ResolveUserAsync(currentUserId ?? sanad.IdMasool, cancellationToken);
+            await EnsureAuditSchemaAsync(cancellationToken);
+            await InsertAuditAsync(idSal, id, PurchaseType, "DELETE", user, "حذف سند خرید", cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+            return await LoadResponseAsync(idSal, id, "سند خرید حذف شد.", cancellationToken);
         }
         catch
         {
