@@ -11,6 +11,7 @@ namespace KianStore.Api.Controllers;
 [Route("api/documents")]
 public sealed class DocumentsController : ControllerBase
 {
+    private const int PurchaseType = 11;
     private const int PartnerSaleType = 113;
     private readonly IDocumentService _documentService;
     private readonly IDocumentMutationService _mutationService;
@@ -37,7 +38,7 @@ public sealed class DocumentsController : ControllerBase
     [HttpPost("purchase")]
     public async Task<IActionResult> CreatePurchase([FromBody] JsonElement body, CancellationToken cancellationToken)
     {
-        var request = DeserializeForced(body, 11, "اطلاعات سند خرید معتبر نیست.");
+        var request = DeserializeForced(body, PurchaseType, "اطلاعات سند خرید معتبر نیست.");
         if (request == null) return BadRequest(ApiResponse<DocumentResponse>.ErrorResult("INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
         var result = await _documentService.CreateAsync(request, cancellationToken);
         return await CreatedResponseAsync(result, cancellationToken, "سند خرید ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود.");
@@ -48,6 +49,39 @@ public sealed class DocumentsController : ControllerBase
     {
         var result = await _mutationService.DeletePurchaseAsync(idSal, id, GetCurrentUserId(null), cancellationToken);
         return Ok(result);
+    }
+
+    // Compatibility route for mobile builds that still call /api/documents/{idSal}/{id}.
+    [HttpDelete("{idSal:int}/{id}")]
+    public async Task<IActionResult> DeleteLegacy(int idSal, string id, CancellationToken cancellationToken)
+    {
+        var document = await _documentService.GetAsync(idSal, id, cancellationToken);
+        if (!document.Success || document.Data == null)
+            return NotFound(ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد."));
+
+        return document.Data.SanadType switch
+        {
+            PurchaseType => Ok(await _mutationService.DeletePurchaseAsync(idSal, id, GetCurrentUserId(null), cancellationToken)),
+            PartnerSaleType => Ok(await _mutationService.DeletePartnerSaleAsync(idSal, id, GetCurrentUserId(null), cancellationToken)),
+            _ => BadRequest(ApiResponse<DocumentResponse>.ErrorResult("DELETE_NOT_SUPPORTED", "حذف این نوع سند از این مسیر پشتیبانی نمی‌شود."))
+        };
+    }
+
+    // Compatibility route for older clients that send only the document id.
+    // The id is resolved from active purchase/partner-sale documents before deletion.
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteLegacyById(string id, CancellationToken cancellationToken)
+    {
+        var document = await _documentService.FindActiveByIdAsync(id, cancellationToken);
+        if (!document.Success || document.Data == null)
+            return NotFound(ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد."));
+
+        return document.Data.SanadType switch
+        {
+            PurchaseType => Ok(await _mutationService.DeletePurchaseAsync(document.Data.IdSal, document.Data.Id, GetCurrentUserId(null), cancellationToken)),
+            PartnerSaleType => Ok(await _mutationService.DeletePartnerSaleAsync(document.Data.IdSal, document.Data.Id, GetCurrentUserId(null), cancellationToken)),
+            _ => BadRequest(ApiResponse<DocumentResponse>.ErrorResult("DELETE_NOT_SUPPORTED", "حذف این نوع سند از این مسیر پشتیبانی نمی‌شود."))
+        };
     }
 
     [HttpPost("partner-sale")]
