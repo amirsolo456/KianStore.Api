@@ -1,9 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using KianStore.Api.Common;
+using KianStore.Api.Data;
 using KianStore.Api.DTOs.Documents;
 using KianStore.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace KianStore.Api.Controllers;
 
@@ -13,12 +15,14 @@ public sealed class DocumentsController : ControllerBase
 {
     private const int PurchaseType = 11;
     private const int PartnerSaleType = 113;
+    private readonly KianStoreDbContext _context;
     private readonly IDocumentService _documentService;
     private readonly IDocumentMutationService _mutationService;
     private readonly ISanadAuditService _auditService;
 
-    public DocumentsController(IDocumentService documentService, IDocumentMutationService mutationService, ISanadAuditService auditService)
+    public DocumentsController(KianStoreDbContext context, IDocumentService documentService, IDocumentMutationService mutationService, ISanadAuditService auditService)
     {
+        _context = context;
         _documentService = documentService;
         _mutationService = mutationService;
         _auditService = auditService;
@@ -51,7 +55,7 @@ public sealed class DocumentsController : ControllerBase
         return Ok(result);
     }
 
-    // Compatibility route for mobile builds that still call /api/documents/{idSal}/{id}.
+    // Compatibility route for mobile builds that call /api/documents/{idSal}/{id}.
     [HttpDelete("{idSal:int}/{id}")]
     public async Task<IActionResult> DeleteLegacy(int idSal, string id, CancellationToken cancellationToken)
     {
@@ -68,18 +72,22 @@ public sealed class DocumentsController : ControllerBase
     }
 
     // Compatibility route for older clients that send only the document id.
-    // The id is resolved from active purchase/partner-sale documents before deletion.
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteLegacyById(string id, CancellationToken cancellationToken)
     {
-        var document = await _documentService.FindActiveByIdAsync(id, cancellationToken);
-        if (!document.Success || document.Data == null)
+        var sanad = await _context.Sanads
+            .AsNoTracking()
+            .Where(x => x.Id == id && !x.Disable && (x.SanadType == PurchaseType || x.SanadType == PartnerSaleType))
+            .OrderByDescending(x => x.IdSal)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (sanad == null)
             return NotFound(ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد."));
 
-        return document.Data.SanadType switch
+        return sanad.SanadType switch
         {
-            PurchaseType => Ok(await _mutationService.DeletePurchaseAsync(document.Data.IdSal, document.Data.Id, GetCurrentUserId(null), cancellationToken)),
-            PartnerSaleType => Ok(await _mutationService.DeletePartnerSaleAsync(document.Data.IdSal, document.Data.Id, GetCurrentUserId(null), cancellationToken)),
+            PurchaseType => Ok(await _mutationService.DeletePurchaseAsync(sanad.IdSal, sanad.Id, GetCurrentUserId(null), cancellationToken)),
+            PartnerSaleType => Ok(await _mutationService.DeletePartnerSaleAsync(sanad.IdSal, sanad.Id, GetCurrentUserId(null), cancellationToken)),
             _ => BadRequest(ApiResponse<DocumentResponse>.ErrorResult("DELETE_NOT_SUPPORTED", "حذف این نوع سند از این مسیر پشتیبانی نمی‌شود."))
         };
     }
@@ -144,8 +152,7 @@ public sealed class DocumentsController : ControllerBase
         var obj = JsonNode.Parse(body.GetRawText())?.AsObject();
         if (obj == null) return null;
         obj["sanadType"] = sanadType;
-        var request = obj.Deserialize<CreateDocumentRequest>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        return request;
+        return obj.Deserialize<CreateDocumentRequest>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
     }
 
     private async Task<IActionResult> CreatedResponseAsync(ApiResponse<DocumentResponse> result, CancellationToken ct, string loadError)
