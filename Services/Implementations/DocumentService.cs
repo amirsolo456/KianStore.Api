@@ -31,92 +31,46 @@ public sealed class DocumentService : IDocumentService
         if (request.SabtDate.Length != 10)
             throw new ApiException(400, "INVALID_DATE", "تاریخ سند باید به صورت yyyy/MM/dd باشد.");
 
-        var tarafExists = await _context.Tarafs
-            .AsNoTracking()
-            .AnyAsync(
-                x => x.Id == request.IdTaraf &&
-                     x.IdType == request.IdTarafType &&
-                     !x.IsDisabled,
-                cancellationToken);
-
+        var tarafExists = await _context.Tarafs.AsNoTracking().AnyAsync(
+            x => x.Id == request.IdTaraf && x.IdType == request.IdTarafType && !x.IsDisabled,
+            cancellationToken);
         if (!tarafExists)
             throw new ApiException(404, "CUSTOMER_NOT_FOUND", "طرف حساب مورد نظر یافت نشد.");
 
         if (!request.IsPending)
         {
-            var cashboxExists = await _context.CheckDefs
-                .AsNoTracking()
-                .AnyAsync(
-                    x => x.Id == request.IdSandogh && x.Type == request.IdSandoghType,
-                    cancellationToken);
-
+            var cashboxExists = await _context.CheckDefs.AsNoTracking().AnyAsync(
+                x => x.Id == request.IdSandogh && x.Type == request.IdSandoghType,
+                cancellationToken);
             if (!cashboxExists)
                 throw new ApiException(409, "INVALID_CASHBOX", "صندوق/حساب انتخاب‌شده معتبر نیست.");
         }
 
-        var distinctKalaIds = request.Items
-            .Select(x => x.IdKala?.Trim())
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        var products = await _context.Kalas
-            .AsNoTracking()
-            .Where(x => distinctKalaIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, cancellationToken);
-
+        var distinctKalaIds = request.Items.Select(x => x.IdKala?.Trim()).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).ToList();
+        var products = await _context.Kalas.AsNoTracking().Where(x => distinctKalaIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, cancellationToken);
         var stockWarnings = new List<object>();
 
         foreach (var item in request.Items)
         {
-            if (item.Quantity <= 0)
-                throw new ApiException(400, "INVALID_QUANTITY", $"تعداد کالای {item.IdKala} باید بیشتر از صفر باشد.");
-
-            if (!products.TryGetValue(item.IdKala, out var product))
-                throw new ApiException(404, "PRODUCT_NOT_FOUND", $"کالا با کد {item.IdKala} یافت نشد.");
-
-            if (product.IsDisabled)
-                throw new ApiException(409, "PRODUCT_DISABLED", $"کالای {item.IdKala} غیرفعال است.");
+            if (item.Quantity <= 0) throw new ApiException(400, "INVALID_QUANTITY", $"تعداد کالای {item.IdKala} باید بیشتر از صفر باشد.");
+            if (!products.TryGetValue(item.IdKala, out var product)) throw new ApiException(404, "PRODUCT_NOT_FOUND", $"کالا با کد {item.IdKala} یافت نشد.");
+            if (product.IsDisabled) throw new ApiException(409, "PRODUCT_DISABLED", $"کالای {item.IdKala} غیرفعال است.");
 
             if (!item.IsIncoming && request.CheckStock)
             {
-                var stock = await _stockService.CheckAsync(
-                    item.IdKala,
-                    item.Quantity,
-                    request.IdAnbar,
-                    request.IdSal,
-                    cancellationToken);
-
+                var stock = await _stockService.CheckAsync(item.IdKala, item.Quantity, request.IdAnbar, request.IdSal, cancellationToken);
                 if (!stock.IsAvailable)
                 {
-                    stockWarnings.Add(new
-                    {
-                        code = "INSUFFICIENT_STOCK",
-                        message = $"موجودی کالای {item.IdKala} کافی نبود.",
-                        stock.KalaId,
-                        stock.IdAnbar,
-                        stock.IdSal,
-                        stock.Requested,
-                        stock.Available,
-                        stock.IsAvailable
-                    });
+                    stockWarnings.Add(new { code = "INSUFFICIENT_STOCK", message = $"موجودی کالای {item.IdKala} کافی نبود.", stock.KalaId, stock.IdAnbar, stock.IdSal, stock.Requested, stock.Available, stock.IsAvailable });
                 }
             }
         }
 
-        // Serializes ID allocation so concurrent website orders do not calculate
-        // the same Sanad ID while the database's native ID function remains the source of truth.
-        await using var transaction = await _context.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-
+        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
             var sanadId = await GenerateSanadIdAsync(request.IdSal, cancellationToken);
-            var factorId = request.IdFaktor ?? await GenerateFactorIdAsync(
-                request.IdSal,
-                request.SanadType,
-                cancellationToken);
+            var factorId = request.IdFaktor ?? await GenerateFactorIdAsync(request.IdSal, request.SanadType, cancellationToken);
 
             var sanad = new Sanad
             {
@@ -242,17 +196,13 @@ public sealed class DocumentService : IDocumentService
             var details = new List<SanadDetail>();
             decimal total = 0;
             var row = 1;
-
             foreach (var item in request.Items)
             {
                 var product = products[item.IdKala];
                 var unitPrice = item.UnitPrice ?? product.MabFrosh;
-                var purchaseUnitPrice = request.IsPending
-                    ? 0
-                    : item.PurchasePrice ?? product.MabKharid;
+                var purchaseUnitPrice = request.IsPending ? 0 : item.PurchasePrice ?? product.MabKharid;
                 var lineTotal = unitPrice * item.Quantity;
                 total += lineTotal;
-
                 details.Add(new SanadDetail
                 {
                     IdSal = request.IdSal,
@@ -319,23 +269,15 @@ public sealed class DocumentService : IDocumentService
             sanad.MabFrosh = total;
             sanad.MabNaghd = 0;
             sanad.MabBed = total;
-
             _context.Sanads.Add(sanad);
             _context.SanadDetails.AddRange(details);
             await _context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             var response = Map(sanad, details);
-            if (stockWarnings.Count > 0)
-            {
-                return ApiResponse<DocumentResponse>.SuccessWithWarningResult(
-                    response,
-                    stockWarnings,
-                    "سند ثبت شد، اما موجودی یک یا چند کالا کافی نبود.",
-                    "STOCK_WARNING");
-            }
-
-            return ApiResponse<DocumentResponse>.SuccessResult(response, "سند با موفقیت ثبت شد.");
+            return stockWarnings.Count > 0
+                ? ApiResponse<DocumentResponse>.SuccessWithWarningResult(response, stockWarnings, "سند ثبت شد، اما موجودی یک یا چند کالا کافی نبود.", "STOCK_WARNING")
+                : ApiResponse<DocumentResponse>.SuccessResult(response, "سند با موفقیت ثبت شد.");
         }
         catch
         {
@@ -344,46 +286,27 @@ public sealed class DocumentService : IDocumentService
         }
     }
 
-    public async Task<ApiResponse<DocumentResponse>> GetAsync(
-        int idSal,
-        string id,
-        CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<DocumentResponse>> GetAsync(int idSal, string id, CancellationToken cancellationToken = default)
     {
-        var sanad = await _context.Sanads
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.IdSal == idSal && x.Id == id, cancellationToken);
-
-        if (sanad == null)
-            throw new ApiException(404, "DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد.");
-
-        var details = await _context.SanadDetails
-            .AsNoTracking()
-            .Where(x => x.IdSal == idSal && x.IdSanad == id)
-            .OrderBy(x => x.Id2)
-            .ToListAsync(cancellationToken);
-
-        var tarafName = await _context.Tarafs
-            .AsNoTracking()
-            .Where(x => x.Id == sanad.IdTaraf && x.IdType == sanad.IdTarafType)
-            .Select(x => x.Name)
-            .FirstOrDefaultAsync(cancellationToken);
-
+        var sanad = await _context.Sanads.AsNoTracking().FirstOrDefaultAsync(x => x.IdSal == idSal && x.Id == id, cancellationToken);
+        if (sanad == null) throw new ApiException(404, "DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد.");
+        var details = await _context.SanadDetails.AsNoTracking().Where(x => x.IdSal == idSal && x.IdSanad == id).OrderBy(x => x.Id2).ToListAsync(cancellationToken);
+        var tarafName = await _context.Tarafs.AsNoTracking().Where(x => x.Id == sanad.IdTaraf && x.IdType == sanad.IdTarafType).Select(x => x.Name).FirstOrDefaultAsync(cancellationToken);
         return ApiResponse<DocumentResponse>.SuccessResult(Map(sanad, details, tarafName));
     }
 
-    public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(
-        int idSal,
-        int sanadType = 12,
-        int page = 1,
-        int pageSize = 30,
-        CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(int idSal, int sanadType = 12, int page = 1, int pageSize = 30, CancellationToken cancellationToken = default)
     {
+        // idSal=0 means current/latest fiscal year. This keeps mobile history in sync
+        // with the server instead of relying on a hard-coded year in the app.
+        if (idSal <= 0)
+            idSal = await _context.SalMalis.AsNoTracking().MaxAsync(x => (int?)x.Id, cancellationToken) ?? 0;
+
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var sanads = await _context.Sanads
-            .AsNoTracking()
-            .Where(x => x.IdSal == idSal && x.SanadType == sanadType && !x.Disable)
+        var sanads = await _context.Sanads.AsNoTracking()
+            .Where(x => x.IdSal == idSal && x.SanadType == sanadType && !x.Disable && x.SefareshID != null && x.SefareshID != "")
             .OrderByDescending(x => x.IdFaktor)
             .ThenByDescending(x => x.Id)
             .Skip((page - 1) * pageSize)
@@ -391,115 +314,62 @@ public sealed class DocumentService : IDocumentService
             .ToListAsync(cancellationToken);
 
         if (sanads.Count == 0)
-        {
-            return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(
-                Array.Empty<DocumentResponse>(),
-                "تاریخچه سندی ندارد.");
-        }
+            return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(Array.Empty<DocumentResponse>(), "تاریخچه فاکتورهای وب خالی است.");
 
         var sanadIds = sanads.Select(x => x.Id).ToList();
-        var details = await _context.SanadDetails
-            .AsNoTracking()
-            .Where(x => x.IdSal == idSal && sanadIds.Contains(x.IdSanad))
-            .OrderBy(x => x.IdSanad)
-            .ThenBy(x => x.Id2)
-            .ToListAsync(cancellationToken);
-
+        var details = await _context.SanadDetails.AsNoTracking().Where(x => x.IdSal == idSal && sanadIds.Contains(x.IdSanad)).OrderBy(x => x.IdSanad).ThenBy(x => x.Id2).ToListAsync(cancellationToken);
         var tarafIds = sanads.Select(x => x.IdTaraf).Distinct().ToList();
-        var tarafs = await _context.Tarafs
-            .AsNoTracking()
-            .Where(x => tarafIds.Contains(x.Id))
-            .ToListAsync(cancellationToken);
-
+        var tarafs = await _context.Tarafs.AsNoTracking().Where(x => tarafIds.Contains(x.Id)).ToListAsync(cancellationToken);
         var detailLookup = details.ToLookup(x => x.IdSanad);
-        var result = sanads
-            .Select(s => Map(
-                s,
-                detailLookup[s.Id].ToList(),
-                tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name))
-            .ToList();
-
-        return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(
-            result,
-            "تاریخچه اسناد با موفقیت دریافت شد.");
+        var result = sanads.Select(s => Map(s, detailLookup[s.Id].ToList(), tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name)).ToList();
+        return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(result, "تاریخچه فاکتورهای وب با موفقیت دریافت شد.");
     }
 
     private async Task<string> GenerateSanadIdAsync(int idSal, CancellationToken cancellationToken)
     {
         var connection = _context.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
-
-        if (shouldClose)
-            await connection.OpenAsync(cancellationToken);
-
+        if (shouldClose) await connection.OpenAsync(cancellationToken);
         try
         {
             await using var command = connection.CreateCommand();
             command.CommandText = "SELECT dbo.GetNewIDAllSanadNewFunc(@IDSal);";
             command.CommandType = CommandType.Text;
             command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
-
             var parameter = command.CreateParameter();
             parameter.ParameterName = "@IDSal";
             parameter.DbType = DbType.Int32;
             parameter.Value = idSal;
             command.Parameters.Add(parameter);
-
             var value = await command.ExecuteScalarAsync(cancellationToken);
             var id = value?.ToString();
-
-            if (string.IsNullOrWhiteSpace(id))
-                throw new InvalidOperationException("سیستم نتوانست شماره داخلی سند را تولید کند.");
-
+            if (string.IsNullOrWhiteSpace(id)) throw new InvalidOperationException("سیستم نتوانست شماره داخلی سند را تولید کند.");
             return id;
         }
-        finally
-        {
-            if (shouldClose)
-                await connection.CloseAsync();
-        }
+        finally { if (shouldClose) await connection.CloseAsync(); }
     }
 
-    private async Task<int> GenerateFactorIdAsync(
-        int idSal,
-        int sanadType,
-        CancellationToken cancellationToken)
-    {
-        return (await _context.Sanads
-            .Where(x => x.IdSal == idSal && x.SanadType == sanadType)
-            .Select(x => (int?)x.IdFaktor)
-            .MaxAsync(cancellationToken) ?? 0) + 1;
-    }
+    private async Task<int> GenerateFactorIdAsync(int idSal, int sanadType, CancellationToken cancellationToken)
+        => (await _context.Sanads.Where(x => x.IdSal == idSal && x.SanadType == sanadType).Select(x => (int?)x.IdFaktor).MaxAsync(cancellationToken) ?? 0) + 1;
 
     private async Task<int> GetMarketIdAsync(CancellationToken cancellationToken)
     {
         var connection = _context.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
-
-        if (shouldClose)
-            await connection.OpenAsync(cancellationToken);
-
+        if (shouldClose) await connection.OpenAsync(cancellationToken);
         try
         {
             await using var command = connection.CreateCommand();
             command.CommandText = "SELECT ISNULL(IDMarket, 0) FROM dbo.Inf WHERE ID = 1;";
             command.CommandType = CommandType.Text;
             command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
-
             var value = await command.ExecuteScalarAsync(cancellationToken);
             return value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
         }
-        finally
-        {
-            if (shouldClose)
-                await connection.CloseAsync();
-        }
+        finally { if (shouldClose) await connection.CloseAsync(); }
     }
 
-    private static DocumentResponse Map(
-        Sanad sanad,
-        IReadOnlyCollection<SanadDetail> details,
-        string? tarafName = null)
+    private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details, string? tarafName = null)
     {
         return new DocumentResponse
         {
@@ -519,11 +389,10 @@ public sealed class DocumentService : IDocumentService
             {
                 Id2 = x.Id2,
                 IdKala = x.IdKala,
-                Quantity = x.Bed2 > 0 ? x.Bed2 : x.Bes2,
-                IsIncoming = x.Bed2 > 0,
-                UnitPrice = x.Bed2 > 0 ? x.BedMab2 : x.BesMab2,
-                PurchasePrice = x.BedMabKharid,
-                TotalAmount = x.SumMab
+                Quantity = x.Bes2 > 0 ? x.Bes2 : x.Bes,
+                UnitPrice = x.BesMab2 > 0 ? x.BesMab2 : x.BesMab,
+                TotalAmount = x.SumMab,
+                PurchasePrice = x.BedMabKharid
             }).ToList()
         };
     }
