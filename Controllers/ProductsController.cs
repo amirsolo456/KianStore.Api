@@ -4,6 +4,7 @@ using KianStore.Api.Data;
 using KianStore.Api.DTOs.Products;
 using KianStore.Api.Models.KianStore;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace KianStore.Api.Controllers;
@@ -72,36 +73,53 @@ public class ProductsController : ControllerBase
         if (name.Length == 0)
             return BadRequest(ApiResponse<Kala>.ErrorResult("INVALID_PRODUCT", "نام کالا الزامی است."));
 
-        // Product code is an internal database key and is never supplied by the client.
-        // Keep the existing Kala.ID schema unchanged and generate a numeric 18-digit code here.
-        string code;
-        do
+        for (var attempt = 0; attempt < 5; attempt++)
         {
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var random = RandomNumberGenerator.GetInt32(0, 1_000_000);
-            code = $"{timestamp}{random:D6}";
+            var code = GenerateProductCode();
+
+            if (await _context.Kalas.AnyAsync(x => x.Id == code, cancellationToken))
+                continue;
+
+            var product = new Kala
+            {
+                Id = code,
+                KalaName = name,
+                IdSanjesh = request.UnitId <= 0 ? 1 : request.UnitId,
+                KalaType = request.TypeId <= 0 ? 1 : request.TypeId,
+                MabFrosh = request.SalePrice < 0 ? 0 : request.SalePrice,
+                MabKharid = request.PurchasePrice < 0 ? 0 : request.PurchasePrice,
+                IsDisabled = false,
+                IdAnbarFrosh = 1,
+                MinCount = 0,
+                IdSanjesh2 = request.UnitId <= 0 ? 1 : request.UnitId,
+                Quantity = 0,
+                Barcode = request.Barcode?.Trim() ?? string.Empty,
+            };
+
+            _context.Kalas.Add(product);
+
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                return Ok(ApiResponse<Kala>.SuccessResult(product));
+            }
+            catch (DbUpdateException ex) when (IsDuplicateKey(ex) && attempt < 4)
+            {
+                _context.Entry(product).State = EntityState.Detached;
+            }
         }
-        while (await _context.Kalas.AnyAsync(x => x.Id == code, cancellationToken));
 
-        var product = new Kala
-        {
-            Id = code,
-            KalaName = name,
-            IdSanjesh = request.UnitId <= 0 ? 1 : request.UnitId,
-            KalaType = request.TypeId <= 0 ? 1 : request.TypeId,
-            MabFrosh = request.SalePrice < 0 ? 0 : request.SalePrice,
-            MabKharid = request.PurchasePrice < 0 ? 0 : request.PurchasePrice,
-            IsDisabled = false,
-            IdAnbarFrosh = 1,
-            MinCount = 0,
-            IdSanjesh2 = request.UnitId <= 0 ? 1 : request.UnitId,
-            Quantity = 0,
-            Barcode = request.Barcode?.Trim() ?? string.Empty,
-        };
-
-        _context.Kalas.Add(product);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        return Ok(ApiResponse<Kala>.SuccessResult(product));
+        return Conflict(ApiResponse<Kala>.ErrorResult("PRODUCT_CODE_GENERATION_FAILED", "تولید کد یکتای کالا ناموفق بود. دوباره تلاش کنید."));
     }
+
+    private static string GenerateProductCode()
+    {
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var random = RandomNumberGenerator.GetInt32(0, 1_000_000);
+        return $"{timestamp}{random:D6}";
+    }
+
+    private static bool IsDuplicateKey(DbUpdateException exception) =>
+        exception.InnerException is SqlException sqlException &&
+        (sqlException.Number == 2601 || sqlException.Number == 2627);
 }
