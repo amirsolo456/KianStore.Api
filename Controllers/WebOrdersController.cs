@@ -14,8 +14,6 @@ namespace KianStore.Api.Controllers;
 [Route("api/web-orders")]
 public sealed class WebOrdersController : ControllerBase
 {
-    // KianStore uses SanadType=51 as the temporary/pending state that is later
-    // consumed by SetFaktorFinalNew and converted to the final sale type (12).
     private const int PendingSanadType = 51;
     private const int FinalSaleSanadType = 12;
 
@@ -300,9 +298,6 @@ public sealed class WebOrdersController : ControllerBase
 
         try
         {
-            // Keep the document at type 51 until SetFaktorFinalNew runs.
-            // That procedure explicitly looks for SanadType=51 and performs
-            // the official transition to the final sale type (12).
             var sanad = await _context.Sanads
                 .FirstOrDefaultAsync(
                     x => x.SefareshID == orderNumber &&
@@ -377,8 +372,12 @@ public sealed class WebOrdersController : ControllerBase
             sanad.IsFinal = false;
             sanad.IsSavedFinal = false;
 
-            if (!string.IsNullOrWhiteSpace(request.SabtDate))
-                sanad.SabtDate = request.SabtDate;
+            var finalSabtDate = string.IsNullOrWhiteSpace(request.SabtDate)
+                ? sanad.SabtDate
+                : request.SabtDate;
+
+            if (!string.IsNullOrWhiteSpace(finalSabtDate))
+                sanad.SabtDate = finalSabtDate;
             if (!string.IsNullOrWhiteSpace(request.Des))
                 sanad.Des = request.Des;
             if (!string.IsNullOrWhiteSpace(request.Sharh))
@@ -507,16 +506,16 @@ public sealed class WebOrdersController : ControllerBase
     private static void AddParameter(
         IDbCommand command,
         string name,
-        DbType type,
-        object value)
+        DbType dbType,
+        object? value)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
-        parameter.DbType = type;
-        parameter.Value = value;
+        parameter.DbType = dbType;
+        parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }
 
     private static string BuildOrderNumber(DateTime utcNow)
-        => $"W{utcNow:yyyyMMddHHmmssfff}";
+        => $"WEB-{utcNow:yyyyMMddHHmmssfff}";
 }
