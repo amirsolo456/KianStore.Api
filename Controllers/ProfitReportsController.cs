@@ -34,12 +34,11 @@ public sealed class ProfitReportsController : ControllerBase
                 "INVALID_DATE_RANGE",
                 "تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد."));
 
-        // SabtDate is stored as fixed-width yyyy/MM/dd. string.Compare is used
-        // here because EF Core translates it for SQL Server; CompareOrdinal was
-        // not translated by the provider and caused the report endpoint to fail.
+        // Profit includes normal sales (12/15) and sales from partner warehouse (113).
+        // Partner-sale details carry the purchase unit price in BedMabKharid.
         var details = await _context.SanadDetails.AsNoTracking()
             .Where(d => d.IdSal == idSal &&
-                        (d.SanadType == 12 || d.SanadType == 15) &&
+                        (d.SanadType == 12 || d.SanadType == 15 || d.SanadType == 113) &&
                         d.Bes2 > 0)
             .Join(
                 _context.Sanads.AsNoTracking(),
