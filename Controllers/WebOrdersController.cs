@@ -132,8 +132,7 @@ public sealed class WebOrdersController : ControllerBase
     [HttpGet("pending")]
     public async Task<ActionResult<ApiResponse<object>>> GetPending(CancellationToken cancellationToken)
     {
-        // Do not restrict website pending orders to the latest fiscal year.
-        // A pending website order must remain visible until finalized.
+        // Pending website orders are visible until they are explicitly promoted to SanadType 12.
         var sanads = await _context.Sanads
             .AsNoTracking()
             .Where(x =>
@@ -194,7 +193,8 @@ public sealed class WebOrdersController : ControllerBase
                 Items = lookup[s.Id].Select(d => new
                 {
                     Id = d.Id2,
-                    d.IdKala,
+                    KalaId = d.IdKala,
+                    IdKala = d.IdKala,
                     KalaName = kalas.TryGetValue(d.IdKala, out var k) ? k.KalaName : d.IdKala,
                     Quantity = d.Bes2 > 0 ? d.Bes2 : d.Bes,
                     UnitPrice = d.BesMab2 > 0 ? d.BesMab2 : d.BesMab,
@@ -289,6 +289,22 @@ public sealed class WebOrdersController : ControllerBase
 
             await _context.SaveChangesAsync(cancellationToken);
             await FinalizeWithKianStoreProcedureAsync(sanad.IdSal, sanad.Id, sanad.SabtDate, cancellationToken);
+
+            // Do not assume every database has the same SetFaktorFinalNew implementation.
+            // The canonical SQL in some installations recalculates/finalizes the document
+            // but leaves SanadType=51. The website workflow requires the document to leave
+            // the pending queue, so promote it explicitly after the procedure succeeds.
+            var persistedBeforePromotion = await _context.Sanads
+                .FirstAsync(x => x.IdSal == sanad.IdSal && x.Id == sanad.Id, cancellationToken);
+
+            persistedBeforePromotion.SanadType = FinalSaleSanadType;
+            persistedBeforePromotion.IsFinal = true;
+            persistedBeforePromotion.IsSavedFinal = true;
+
+            foreach (var detail in details)
+                detail.SanadType = FinalSaleSanadType;
+
+            await _context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             var persisted = await _context.Sanads.AsNoTracking().FirstAsync(
