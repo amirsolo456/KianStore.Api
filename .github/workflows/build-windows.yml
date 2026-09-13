@@ -59,3 +59,5 @@ jobs:
           name: KianStore.Api-win-x64
           path: artifact
           retention-days: 7
+
+# Build trigger for the latest master revision.
