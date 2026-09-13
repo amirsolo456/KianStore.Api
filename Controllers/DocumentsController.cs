@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using KianStore.Api.Common;
 using KianStore.Api.DTOs.Documents;
 using KianStore.Api.Services.Interfaces;
@@ -33,6 +35,56 @@ public sealed class DocumentsController : ControllerBase
             return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult(
                 "DOCUMENT_RESPONSE_LOAD_FAILED",
                 "سند ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود."));
+        }
+
+        return StatusCode(201, new ApiResponse<DocumentResponse>
+        {
+            Success = true,
+            Code = result.Code,
+            Message = result.Message,
+            Data = persisted.Data,
+            Errors = result.Errors,
+            Warnings = result.Warnings,
+            TraceId = result.TraceId
+        });
+    }
+
+    // Purchase documents are always SanadType=11.
+    // The client must never provide or edit the document type.
+    [HttpPost("purchase")]
+    public async Task<IActionResult> CreatePurchase(
+        [FromBody] JsonElement body,
+        CancellationToken cancellationToken)
+    {
+        if (body.ValueKind != JsonValueKind.Object)
+            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
+                "INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
+
+        var requestObject = JsonNode.Parse(body.GetRawText())?.AsObject();
+        if (requestObject == null)
+            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
+                "INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
+
+        // Ignore any client value and enforce the accounting rule on the server.
+        requestObject["sanadType"] = 11;
+
+        var request = requestObject.Deserialize<CreateDocumentRequest>();
+        if (request == null)
+            return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
+                "INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
+
+        var result = await _documentService.CreateAsync(request, cancellationToken);
+
+        if (!result.Success || result.Data == null)
+            return StatusCode(201, result);
+
+        var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, cancellationToken);
+
+        if (!persisted.Success || persisted.Data == null)
+        {
+            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult(
+                "DOCUMENT_RESPONSE_LOAD_FAILED",
+                "سند خرید ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود."));
         }
 
         return StatusCode(201, new ApiResponse<DocumentResponse>
