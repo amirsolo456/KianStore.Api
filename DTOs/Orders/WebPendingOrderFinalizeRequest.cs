@@ -10,11 +10,13 @@ public sealed class WebPendingOrderFinalizeRequest
     [Range(1, int.MaxValue)] public int IdSandogh { get; init; } = 1;
     [Range(0, int.MaxValue)] public int IdSandoghType { get; init; } = 1;
     [Range(1, int.MaxValue)] public int SanadType { get; init; } = 51;
-    [Required, StringLength(10)] public string SabtDate { get; init; } = null!;
+    // The pending document already has a registration date. The mobile client
+    // may omit it; the controller then keeps the date stored on the document.
+    [StringLength(10)] public string? SabtDate { get; init; }
     [StringLength(200)] public string? Des { get; init; }
     [StringLength(700)] public string? Sharh { get; init; }
     public bool CheckStock { get; init; } = true;
-    [MinLength(1)] public List<WebPendingOrderItemFinalizeRequest> Items { get; init; } = new();
+    public List<WebPendingOrderItemFinalizeRequest> Items { get; init; } = new();
 }
 
 public sealed class WebPendingOrderItemFinalizeRequest
