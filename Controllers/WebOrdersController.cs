@@ -37,44 +37,24 @@ public sealed class WebOrdersController : ControllerBase
         CancellationToken cancellationToken)
     {
         if (request.Items is null || request.Items.Count == 0)
-        {
-            return BadRequest(ApiResponse<object>.ErrorResult(
-                "ORDER_ITEMS_REQUIRED",
-                "حداقل یک کالا برای ثبت سفارش لازم است."));
-        }
+            return BadRequest(ApiResponse<object>.ErrorResult("ORDER_ITEMS_REQUIRED", "حداقل یک کالا برای ثبت سفارش لازم است."));
 
         if (!request.TarafId.HasValue || !request.TarafType.HasValue)
-        {
-            return BadRequest(ApiResponse<object>.ErrorResult(
-                "CUSTOMER_REQUIRED",
-                "برای ثبت سفارش وب، طرف حساب الزامی است."));
-        }
+            return BadRequest(ApiResponse<object>.ErrorResult("CUSTOMER_REQUIRED", "برای ثبت سفارش وب، طرف حساب الزامی است."));
 
         var idSal = request.IdSal ?? await GetCurrentIdSalAsync(cancellationToken);
         if (idSal <= 0)
-        {
-            return StatusCode(500, ApiResponse<object>.ErrorResult(
-                "FISCAL_YEAR_NOT_FOUND",
-                "سال مالی جاری در دیتابیس پیدا نشد."));
-        }
+            return StatusCode(500, ApiResponse<object>.ErrorResult("FISCAL_YEAR_NOT_FOUND", "سال مالی جاری در دیتابیس پیدا نشد."));
 
         var idAnbar = request.IdAnbar ?? 1;
         var requestedItems = request.Items
             .Where(x => !string.IsNullOrWhiteSpace(x.KalaId) && x.Quantity > 0)
             .GroupBy(x => x.KalaId.Trim(), StringComparer.Ordinal)
-            .Select(g => new
-            {
-                KalaId = g.Key,
-                Quantity = g.Sum(x => x.Quantity)
-            })
+            .Select(g => new { KalaId = g.Key, Quantity = g.Sum(x => x.Quantity) })
             .ToList();
 
         if (requestedItems.Count == 0)
-        {
-            return BadRequest(ApiResponse<object>.ErrorResult(
-                "ORDER_ITEMS_INVALID",
-                "اقلام سفارش معتبر نیستند."));
-        }
+            return BadRequest(ApiResponse<object>.ErrorResult("ORDER_ITEMS_INVALID", "اقلام سفارش معتبر نیستند."));
 
         var kalaIds = requestedItems.Select(x => x.KalaId).ToArray();
         var kalas = await _context.Kalas
@@ -84,50 +64,27 @@ public sealed class WebOrdersController : ControllerBase
 
         var missing = kalaIds.FirstOrDefault(x => !kalas.ContainsKey(x));
         if (missing is not null)
-        {
-            return NotFound(ApiResponse<object>.ErrorResult(
-                "PRODUCT_NOT_FOUND",
-                $"کالا با شناسه {missing} یافت نشد."));
-        }
+            return NotFound(ApiResponse<object>.ErrorResult("PRODUCT_NOT_FOUND", $"کالا با شناسه {missing} یافت نشد."));
 
         var tarafExists = await _context.Tarafs
             .AsNoTracking()
-            .AnyAsync(
-                x => x.Id == request.TarafId.Value &&
-                     x.IdType == request.TarafType.Value &&
-                     !x.IsDisabled,
-                cancellationToken);
+            .AnyAsync(x => x.Id == request.TarafId.Value && x.IdType == request.TarafType.Value && !x.IsDisabled, cancellationToken);
 
         if (!tarafExists)
-        {
-            return BadRequest(ApiResponse<object>.ErrorResult(
-                "CUSTOMER_NOT_FOUND",
-                "طرف حساب انتخاب‌شده یافت نشد."));
-        }
+            return BadRequest(ApiResponse<object>.ErrorResult("CUSTOMER_NOT_FOUND", "طرف حساب انتخاب‌شده یافت نشد."));
 
         foreach (var item in requestedItems)
         {
-            var stock = await _stockService.CheckAsync(
-                item.KalaId,
-                item.Quantity,
-                idAnbar,
-                idSal,
-                cancellationToken);
-
+            var stock = await _stockService.CheckAsync(item.KalaId, item.Quantity, idAnbar, idSal, cancellationToken);
             if (!stock.IsAvailable)
-            {
-                return Conflict(ApiResponse<object>.ErrorResult(
-                    "INSUFFICIENT_STOCK",
-                    $"موجودی کالای {item.KalaId} کافی نیست.",
-                    new
-                    {
-                        stock.Available,
-                        stock.Requested,
-                        stock.KalaId,
-                        stock.IdAnbar,
-                        stock.IdSal
-                    }));
-            }
+                return Conflict(ApiResponse<object>.ErrorResult("INSUFFICIENT_STOCK", $"موجودی کالای {item.KalaId} کافی نیست.", new
+                {
+                    stock.Available,
+                    stock.Requested,
+                    stock.KalaId,
+                    stock.IdAnbar,
+                    stock.IdSal
+                }));
         }
 
         var orderNumber = BuildOrderNumber(DateTime.UtcNow);
@@ -159,59 +116,44 @@ public sealed class WebOrdersController : ControllerBase
 
         var document = await _documentService.CreateAsync(documentRequest, cancellationToken);
         if (!document.Success || document.Data is null)
-        {
             return StatusCode(500, document);
-        }
 
-        return Ok(ApiResponse<object>.SuccessResult(
-            new
-            {
-                document.Data.IdSal,
-                document.Data.Id,
-                document.Data.IdFaktor,
-                OrderNumber = orderNumber,
-                SanadType = PendingSanadType,
-                document.Data.TotalAmount
-            },
-            "سفارش مستقیماً به سند در انتظار تأیید ثبت شد."));
+        return Ok(ApiResponse<object>.SuccessResult(new
+        {
+            document.Data.IdSal,
+            document.Data.Id,
+            document.Data.IdFaktor,
+            OrderNumber = orderNumber,
+            SanadType = PendingSanadType,
+            document.Data.TotalAmount
+        }, "سفارش مستقیماً به سند در انتظار تأیید ثبت شد."));
     }
 
     [HttpGet("pending")]
-    public async Task<ActionResult<ApiResponse<object>>> GetPending(
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<object>>> GetPending(CancellationToken cancellationToken)
     {
-        var idSal = await GetCurrentIdSalAsync(cancellationToken);
-        if (idSal <= 0)
-        {
-            return StatusCode(500, ApiResponse<object>.ErrorResult(
-                "FISCAL_YEAR_NOT_FOUND",
-                "سال مالی جاری در دیتابیس پیدا نشد."));
-        }
-
+        // Do not restrict website pending orders to the latest fiscal year.
+        // A pending website order must remain visible until finalized.
         var sanads = await _context.Sanads
             .AsNoTracking()
             .Where(x =>
-                x.IdSal == idSal &&
                 x.SanadType == PendingSanadType &&
                 !x.Disable &&
                 x.SefareshID != null &&
                 x.SefareshID != "")
-            .OrderByDescending(x => x.IdFaktor)
+            .OrderByDescending(x => x.IdSal)
+            .ThenByDescending(x => x.IdFaktor)
             .ThenByDescending(x => x.Id)
             .Take(100)
             .ToListAsync(cancellationToken);
 
         if (sanads.Count == 0)
-        {
-            return Ok(ApiResponse<object>.SuccessResult(
-                Array.Empty<object>(),
-                "سند وب در انتظار تأیید وجود ندارد."));
-        }
+            return Ok(ApiResponse<object>.SuccessResult(Array.Empty<object>(), "سند وب در انتظار تأیید وجود ندارد."));
 
         var ids = sanads.Select(x => x.Id).ToList();
         var details = await _context.SanadDetails
             .AsNoTracking()
-            .Where(x => x.IdSal == idSal && ids.Contains(x.IdSanad))
+            .Where(x => ids.Contains(x.IdSanad))
             .OrderBy(x => x.IdSanad)
             .ThenBy(x => x.Id2)
             .ToListAsync(cancellationToken);
@@ -229,12 +171,9 @@ public sealed class WebOrdersController : ControllerBase
             .ToListAsync(cancellationToken);
 
         var lookup = details.ToLookup(x => x.IdSanad, StringComparer.Ordinal);
-
         var result = sanads.Select(s =>
         {
-            var taraf = tarafs.FirstOrDefault(t =>
-                t.Id == s.IdTaraf && t.IdType == s.IdTarafType);
-
+            var taraf = tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType);
             return new
             {
                 s.IdSal,
@@ -256,9 +195,7 @@ public sealed class WebOrdersController : ControllerBase
                 {
                     Id = d.Id2,
                     d.IdKala,
-                    KalaName = kalas.TryGetValue(d.IdKala, out var k)
-                        ? k.KalaName
-                        : d.IdKala,
+                    KalaName = kalas.TryGetValue(d.IdKala, out var k) ? k.KalaName : d.IdKala,
                     Quantity = d.Bes2 > 0 ? d.Bes2 : d.Bes,
                     UnitPrice = d.BesMab2 > 0 ? d.BesMab2 : d.BesMab,
                     TotalPrice = d.SumMab,
@@ -267,9 +204,7 @@ public sealed class WebOrdersController : ControllerBase
             };
         }).ToList();
 
-        return Ok(ApiResponse<object>.SuccessResult(
-            result,
-            "فاکتورهای وب در انتظار تأیید دریافت شد."));
+        return Ok(ApiResponse<object>.SuccessResult(result, "فاکتورهای وب در انتظار تأیید دریافت شد."));
     }
 
     [HttpPost("{orderNumber}/finalize")]
@@ -279,54 +214,29 @@ public sealed class WebOrdersController : ControllerBase
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(orderNumber))
-        {
-            return BadRequest(ApiResponse<object>.ErrorResult(
-                "ORDER_NUMBER_REQUIRED",
-                "شماره سفارش الزامی است."));
-        }
+            return BadRequest(ApiResponse<object>.ErrorResult("ORDER_NUMBER_REQUIRED", "شماره سفارش الزامی است."));
 
         if (request.Items is null || request.Items.Count == 0)
-        {
-            return BadRequest(ApiResponse<object>.ErrorResult(
-                "PURCHASE_PRICES_REQUIRED",
-                "قیمت خرید اقلام الزامی است."));
-        }
+            return BadRequest(ApiResponse<object>.ErrorResult("PURCHASE_PRICES_REQUIRED", "قیمت خرید اقلام الزامی است."));
 
-        await using var transaction = await _context.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
+        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
         try
         {
-            var sanad = await _context.Sanads
-                .FirstOrDefaultAsync(
-                    x => x.SefareshID == orderNumber &&
-                         x.SanadType == PendingSanadType &&
-                         !x.Disable,
-                    cancellationToken);
+            var sanad = await _context.Sanads.FirstOrDefaultAsync(
+                x => x.SefareshID == orderNumber && x.SanadType == PendingSanadType && !x.Disable,
+                cancellationToken);
 
             if (sanad is null)
             {
-                var alreadyFinal = await _context.Sanads
-                    .AsNoTracking()
-                    .AnyAsync(
-                        x => x.SefareshID == orderNumber &&
-                             x.SanadType == FinalSaleSanadType &&
-                             !x.Disable,
-                        cancellationToken);
+                var alreadyFinal = await _context.Sanads.AsNoTracking().AnyAsync(
+                    x => x.SefareshID == orderNumber && x.SanadType == FinalSaleSanadType && !x.Disable,
+                    cancellationToken);
 
                 await transaction.RollbackAsync(cancellationToken);
-
-                if (alreadyFinal)
-                {
-                    return Conflict(ApiResponse<object>.ErrorResult(
-                        "ORDER_ALREADY_FINALIZED",
-                        "این سند قبلاً تأیید شده است."));
-                }
-
-                return NotFound(ApiResponse<object>.ErrorResult(
-                    "ORDER_NOT_FOUND",
-                    "سند وب در انتظار تأیید یافت نشد."));
+                return alreadyFinal
+                    ? Conflict(ApiResponse<object>.ErrorResult("ORDER_ALREADY_FINALIZED", "این سند قبلاً تأیید شده است."))
+                    : NotFound(ApiResponse<object>.ErrorResult("ORDER_NOT_FOUND", "سند وب در انتظار تأیید یافت نشد."));
             }
 
             var details = await _context.SanadDetails
@@ -337,9 +247,7 @@ public sealed class WebOrdersController : ControllerBase
             if (details.Count == 0)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return Conflict(ApiResponse<object>.ErrorResult(
-                    "ORDER_DETAILS_NOT_FOUND",
-                    "سفارش پیدا شد اما اقلام سند موجود نیستند."));
+                return Conflict(ApiResponse<object>.ErrorResult("ORDER_DETAILS_NOT_FOUND", "سفارش پیدا شد اما اقلام سند موجود نیستند."));
             }
 
             var prices = request.Items
@@ -372,46 +280,32 @@ public sealed class WebOrdersController : ControllerBase
             sanad.IsFinal = false;
             sanad.IsSavedFinal = false;
 
-            var finalSabtDate = string.IsNullOrWhiteSpace(request.SabtDate)
-                ? sanad.SabtDate
-                : request.SabtDate;
-
-            if (!string.IsNullOrWhiteSpace(finalSabtDate))
-                sanad.SabtDate = finalSabtDate;
+            if (!string.IsNullOrWhiteSpace(request.SabtDate))
+                sanad.SabtDate = request.SabtDate;
             if (!string.IsNullOrWhiteSpace(request.Des))
                 sanad.Des = request.Des;
             if (!string.IsNullOrWhiteSpace(request.Sharh))
                 sanad.Sharh = request.Sharh;
 
             await _context.SaveChangesAsync(cancellationToken);
-
-            await FinalizeWithKianStoreProcedureAsync(
-                sanad.IdSal,
-                sanad.Id,
-                sanad.SabtDate,
-                cancellationToken);
-
+            await FinalizeWithKianStoreProcedureAsync(sanad.IdSal, sanad.Id, sanad.SabtDate, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
-            var persisted = await _context.Sanads
-                .AsNoTracking()
-                .FirstAsync(
-                    x => x.IdSal == sanad.IdSal && x.Id == sanad.Id,
-                    cancellationToken);
+            var persisted = await _context.Sanads.AsNoTracking().FirstAsync(
+                x => x.IdSal == sanad.IdSal && x.Id == sanad.Id,
+                cancellationToken);
 
-            return Ok(ApiResponse<object>.SuccessResult(
-                new
-                {
-                    persisted.IdSal,
-                    persisted.Id,
-                    persisted.IdFaktor,
-                    persisted.IDSanad,
-                    persisted.SanadType,
-                    persisted.IsFinal,
-                    persisted.IsSavedFinal,
-                    persisted.MabKol
-                },
-                "همان سند وب با موفقیت تأیید و نهایی شد."));
+            return Ok(ApiResponse<object>.SuccessResult(new
+            {
+                persisted.IdSal,
+                persisted.Id,
+                persisted.IdFaktor,
+                persisted.IDSanad,
+                persisted.SanadType,
+                persisted.IsFinal,
+                persisted.IsSavedFinal,
+                persisted.MabKol
+            }, "همان سند وب با موفقیت تأیید و نهایی شد."));
         }
         catch
         {
@@ -424,24 +318,19 @@ public sealed class WebOrdersController : ControllerBase
     {
         var connection = _context.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
-
-        if (shouldClose)
-            await connection.OpenAsync(cancellationToken);
-
+        if (shouldClose) await connection.OpenAsync(cancellationToken);
         try
         {
             await using var command = connection.CreateCommand();
             command.CommandText = "SELECT ISNULL(MAX(ID), 0) FROM dbo.SalMali;";
             command.CommandType = CommandType.Text;
             command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
-
             var value = await command.ExecuteScalarAsync(cancellationToken);
             return value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
         }
         finally
         {
-            if (shouldClose)
-                await connection.CloseAsync();
+            if (shouldClose) await connection.CloseAsync();
         }
     }
 
@@ -453,10 +342,7 @@ public sealed class WebOrdersController : ControllerBase
     {
         var connection = _context.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
-
-        if (shouldClose)
-            await connection.OpenAsync(cancellationToken);
-
+        if (shouldClose) await connection.OpenAsync(cancellationToken);
         try
         {
             await using var command = connection.CreateCommand();
@@ -491,23 +377,17 @@ public sealed class WebOrdersController : ControllerBase
             command.Parameters.Add(errorMessage);
 
             await command.ExecuteNonQueryAsync(cancellationToken);
-
             var err = errorMessage.Value?.ToString();
             if (!string.IsNullOrWhiteSpace(err))
                 throw new InvalidOperationException($"خطا در نهایی‌سازی سند در KianStore: {err}");
         }
         finally
         {
-            if (shouldClose)
-                await connection.CloseAsync();
+            if (shouldClose) await connection.CloseAsync();
         }
     }
 
-    private static void AddParameter(
-        IDbCommand command,
-        string name,
-        DbType dbType,
-        object? value)
+    private static void AddParameter(IDbCommand command, string name, DbType dbType, object? value)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
@@ -516,6 +396,5 @@ public sealed class WebOrdersController : ControllerBase
         command.Parameters.Add(parameter);
     }
 
-    private static string BuildOrderNumber(DateTime utcNow)
-        => $"WEB-{utcNow:yyyyMMddHHmmssfff}";
+    private static string BuildOrderNumber(DateTime utcNow) => $"WEB-{utcNow:yyyyMMddHHmmssfff}";
 }
