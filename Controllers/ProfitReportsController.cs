@@ -34,10 +34,9 @@ public sealed class ProfitReportsController : ControllerBase
                 "INVALID_DATE_RANGE",
                 "تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد."));
 
-        // SabtDate is stored as yyyy/MM/dd. Direct string comparisons are
-        // intentional here: unlike string.CompareOrdinal inside the LINQ query,
-        // these operators are translated by EF Core to SQL and work correctly
-        // with the fixed-width Jalali date format.
+        // SabtDate is stored as fixed-width yyyy/MM/dd. string.Compare is used
+        // here because EF Core translates it for SQL Server; CompareOrdinal was
+        // not translated by the provider and caused the report endpoint to fail.
         var details = await _context.SanadDetails.AsNoTracking()
             .Where(d => d.IdSal == idSal &&
                         (d.SanadType == 12 || d.SanadType == 15) &&
@@ -49,8 +48,8 @@ public sealed class ProfitReportsController : ControllerBase
                 (d, s) => new { Detail = d, Sanad = s })
             .Where(x =>
                 !x.Sanad.Disable &&
-                x.Sanad.SabtDate >= fromDate &&
-                x.Sanad.SabtDate <= toDate)
+                string.Compare(x.Sanad.SabtDate, fromDate) >= 0 &&
+                string.Compare(x.Sanad.SabtDate, toDate) <= 0)
             .Select(x => new
             {
                 x.Detail.IdKala,
