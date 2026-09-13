@@ -26,14 +26,18 @@ public sealed class ProfitReportsController : ControllerBase
                 "INVALID_DATE_RANGE",
                 "fromDate و toDate الزامی هستند."));
 
+        fromDate = NormalizeDigits(fromDate);
+        toDate = NormalizeDigits(toDate);
+
         if (string.CompareOrdinal(fromDate, toDate) > 0)
             return BadRequest(ApiResponse<ProfitReportResponse>.ErrorResult(
                 "INVALID_DATE_RANGE",
                 "تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد."));
 
-        // Profit includes normal sales (12) and partner-warehouse sales (15).
-        // Partner-warehouse sales do not affect own inventory, but their captured
-        // partner cost is still used as the cost basis for profit calculation.
+        // SabtDate is stored as yyyy/MM/dd. Direct string comparisons are
+        // intentional here: unlike string.CompareOrdinal inside the LINQ query,
+        // these operators are translated by EF Core to SQL and work correctly
+        // with the fixed-width Jalali date format.
         var details = await _context.SanadDetails.AsNoTracking()
             .Where(d => d.IdSal == idSal &&
                         (d.SanadType == 12 || d.SanadType == 15) &&
@@ -45,8 +49,8 @@ public sealed class ProfitReportsController : ControllerBase
                 (d, s) => new { Detail = d, Sanad = s })
             .Where(x =>
                 !x.Sanad.Disable &&
-                string.CompareOrdinal(x.Sanad.SabtDate, fromDate) >= 0 &&
-                string.CompareOrdinal(x.Sanad.SabtDate, toDate) <= 0)
+                x.Sanad.SabtDate >= fromDate &&
+                x.Sanad.SabtDate <= toDate)
             .Select(x => new
             {
                 x.Detail.IdKala,
@@ -82,5 +86,18 @@ public sealed class ProfitReportsController : ControllerBase
         return Ok(ApiResponse<ProfitReportResponse>.SuccessResult(
             report,
             message: "گزارش سود با موفقیت محاسبه شد."));
+    }
+
+    private static string NormalizeDigits(string value)
+    {
+        var result = value.Trim();
+        const string persian = "۰۱۲۳۴۵۶۷۸۹";
+        const string arabic = "٠١٢٣٤٥٦٧٨٩";
+        for (var i = 0; i < 10; i++)
+        {
+            result = result.Replace(persian[i], (char)('0' + i));
+            result = result.Replace(arabic[i], (char)('0' + i));
+        }
+        return result.Replace('-', '/');
     }
 }
