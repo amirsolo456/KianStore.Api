@@ -18,10 +18,14 @@ public sealed class StockRepository : IStockRepository
             .FirstOrDefaultAsync(cancellationToken);
         if (cachedStock.HasValue) return cachedStock.Value;
 
-        var calculatedStock = await _context.SanadDetails.AsNoTracking()
-            .Where(x => x.IdSal == idSal && x.IdKala == kalaId && x.IdAnbar == idAnbar &&
-                        x.SanadType != 7 && x.SanadType != 15 && x.SanadType != 16 && x.SanadType != 19)
-            .Select(x => (double?)(x.Bed2 - x.Bes2))
+        var calculatedStock = await (
+            from detail in _context.SanadDetails.AsNoTracking()
+            join sanad in _context.Sanads.AsNoTracking()
+                on new { detail.IdSal, Id = detail.IdSanad } equals new { sanad.IdSal, sanad.Id }
+            where detail.IdSal == idSal && detail.IdKala == kalaId && detail.IdAnbar == idAnbar
+                  && !sanad.Disable
+                  && detail.SanadType != 7 && detail.SanadType != 15 && detail.SanadType != 16 && detail.SanadType != 19
+            select (double?)(detail.Bed2 - detail.Bes2))
             .SumAsync(cancellationToken);
         return (decimal)(calculatedStock ?? 0d);
     }
