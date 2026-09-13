@@ -68,7 +68,9 @@ public sealed class DocumentsController : ControllerBase
         // Ignore any client value and enforce the accounting rule on the server.
         requestObject["sanadType"] = 11;
 
-        var request = requestObject.Deserialize<CreateDocumentRequest>();
+        var request = requestObject.Deserialize<CreateDocumentRequest>(
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
         if (request == null)
             return BadRequest(ApiResponse<DocumentResponse>.ErrorResult(
                 "INVALID_REQUEST", "اطلاعات سند خرید معتبر نیست."));
