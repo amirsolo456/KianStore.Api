@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Products;
@@ -66,15 +67,21 @@ public class ProductsController : ControllerBase
         [FromBody] CreateProductRequest request,
         CancellationToken cancellationToken)
     {
-        var code = request.Code.Trim();
         var name = request.Name.Trim();
 
-        if (code.Length == 0 || name.Length == 0)
-            return BadRequest(ApiResponse<Kala>.ErrorResult("INVALID_PRODUCT", "کد و نام کالا الزامی است."));
+        if (name.Length == 0)
+            return BadRequest(ApiResponse<Kala>.ErrorResult("INVALID_PRODUCT", "نام کالا الزامی است."));
 
-        var exists = await _context.Kalas.AnyAsync(x => x.Id == code, cancellationToken);
-        if (exists)
-            return Conflict(ApiResponse<Kala>.ErrorResult("PRODUCT_CODE_EXISTS", "این کد کالا قبلاً ثبت شده است."));
+        // Product code is an internal database key and is never supplied by the client.
+        // Keep the existing Kala.ID schema unchanged and generate a numeric 18-digit code here.
+        string code;
+        do
+        {
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var random = RandomNumberGenerator.GetInt32(0, 1_000_000);
+            code = $"{timestamp}{random:D6}";
+        }
+        while (await _context.Kalas.AnyAsync(x => x.Id == code, cancellationToken));
 
         var product = new Kala
         {
