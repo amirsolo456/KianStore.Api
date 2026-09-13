@@ -131,34 +131,15 @@ public sealed class DocumentService : IDocumentService
 
     public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(int idSal, int sanadType = 12, int page = 1, int pageSize = 30, CancellationToken cancellationToken = default)
     {
-        // idSal <= 0 means all fiscal years. A sales history must contain every sale
-        // regardless of where it was created (mobile or website) or which fiscal year it belongs to.
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
-
-        var sanadsQuery = _context.Sanads.AsNoTracking()
-            .Where(x => x.SanadType == sanadType && !x.Disable);
-
-        if (idSal > 0)
-            sanadsQuery = sanadsQuery.Where(x => x.IdSal == idSal);
-
-        var sanads = await sanadsQuery
-            .OrderByDescending(x => x.IdSal)
-            .ThenByDescending(x => x.IdFaktor)
-            .ThenByDescending(x => x.Id)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
-
-        if (sanads.Count == 0)
-            return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(Array.Empty<DocumentResponse>(), "تاریخچه فروش خالی است.");
-
+        var sanadsQuery = _context.Sanads.AsNoTracking().Where(x => x.SanadType == sanadType && !x.Disable);
+        if (idSal > 0) sanadsQuery = sanadsQuery.Where(x => x.IdSal == idSal);
+        var sanads = await sanadsQuery.OrderByDescending(x => x.IdSal).ThenByDescending(x => x.IdFaktor).ThenByDescending(x => x.Id).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        if (sanads.Count == 0) return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(Array.Empty<DocumentResponse>(), "تاریخچه فروش خالی است.");
         var sanadIds = sanads.Select(x => x.Id).ToList();
         var salIds = sanads.Select(x => x.IdSal).Distinct().ToList();
-        var details = await _context.SanadDetails.AsNoTracking()
-            .Where(x => sanadIds.Contains(x.IdSanad) && salIds.Contains(x.IdSal))
-            .OrderBy(x => x.IdSal).ThenBy(x => x.IdSanad).ThenBy(x => x.Id2)
-            .ToListAsync(cancellationToken);
+        var details = await _context.SanadDetails.AsNoTracking().Where(x => sanadIds.Contains(x.IdSanad) && salIds.Contains(x.IdSal)).OrderBy(x => x.IdSal).ThenBy(x => x.IdSanad).ThenBy(x => x.Id2).ToListAsync(cancellationToken);
         var tarafIds = sanads.Select(x => x.IdTaraf).Distinct().ToList();
         var tarafs = await _context.Tarafs.AsNoTracking().Where(x => tarafIds.Contains(x.Id)).ToListAsync(cancellationToken);
         var detailLookup = details.ToLookup(x => x.IdSal + "|" + x.IdSanad);
@@ -195,12 +176,21 @@ public sealed class DocumentService : IDocumentService
 
     private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details, string? tarafName = null)
     {
+        var isPurchase = sanad.SanadType == 11;
         return new DocumentResponse
         {
             IdSal = sanad.IdSal, Id = sanad.Id, SanadType = sanad.SanadType, IdAnbar = sanad.IdAnbar, IdTaraf = sanad.IdTaraf,
             IdTarafType = sanad.IdTarafType, IdFaktor = sanad.IdFaktor, SabtDate = sanad.SabtDate, TotalAmount = sanad.MabKol,
             IsFinal = sanad.IsFinal, Description = sanad.Des, TarafName = tarafName,
-            Items = details.Select(x => new DocumentItemResponse { Id2 = x.Id2, IdKala = x.IdKala, Quantity = x.Bes2 > 0 ? x.Bes2 : x.Bes, UnitPrice = x.BesMab2 > 0 ? x.BesMab2 : x.BesMab, TotalAmount = x.SumMab, PurchasePrice = x.BedMabKharid }).ToList()
+            Items = details.Select(x => new DocumentItemResponse
+            {
+                Id2 = x.Id2,
+                IdKala = x.IdKala,
+                Quantity = isPurchase ? (x.Bed2 > 0 ? x.Bed2 : x.Bed) : (x.Bes2 > 0 ? x.Bes2 : x.Bes),
+                UnitPrice = isPurchase ? (x.BedMab2 > 0 ? x.BedMab2 : x.BedMab) : (x.BesMab2 > 0 ? x.BesMab2 : x.BesMab),
+                TotalAmount = x.SumMab,
+                PurchasePrice = x.BedMabKharid
+            }).ToList()
         };
     }
 }
