@@ -9,7 +9,7 @@ public sealed class WebPendingOrderFinalizeRequest
     [Range(1, int.MaxValue)] public int IdMasool { get; init; } = 101;
     [Range(1, int.MaxValue)] public int IdSandogh { get; init; } = 1;
     [Range(0, int.MaxValue)] public int IdSandoghType { get; init; } = 1;
-    [Range(1, int.MaxValue)] public int SanadType { get; init; } = 12;
+    [Range(1, int.MaxValue)] public int SanadType { get; init; } = 51;
     [Required, StringLength(10)] public string SabtDate { get; init; } = null!;
     [StringLength(200)] public string? Des { get; init; }
     [StringLength(700)] public string? Sharh { get; init; }
