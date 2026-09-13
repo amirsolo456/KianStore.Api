@@ -17,4 +17,10 @@ public interface IDocumentMutationService
         string id,
         int? currentUserId,
         CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<DocumentResponse>> DeletePurchaseAsync(
+        int idSal,
+        string id,
+        int? currentUserId,
+        CancellationToken cancellationToken = default);
 }
