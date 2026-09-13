@@ -297,10 +297,24 @@ public sealed class DocumentService : IDocumentService
 
     public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(int idSal, int sanadType = 12, int page = 1, int pageSize = 30, CancellationToken cancellationToken = default)
     {
-        // idSal=0 means current/latest fiscal year. This keeps mobile history in sync
-        // with the server instead of relying on a hard-coded year in the app.
+        // idSal=0 means current/latest fiscal year. Read it through SQL because this
+        // DbContext intentionally does not expose a SalMali DbSet.
         if (idSal <= 0)
-            idSal = await _context.SalMalis.AsNoTracking().MaxAsync(x => (int?)x.Id, cancellationToken) ?? 0;
+        {
+            var connection = _context.Database.GetDbConnection();
+            var shouldClose = connection.State != ConnectionState.Open;
+            if (shouldClose) await connection.OpenAsync(cancellationToken);
+            try
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT ISNULL(MAX(ID), 0) FROM dbo.SalMali;";
+                command.CommandType = CommandType.Text;
+                command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
+                var value = await command.ExecuteScalarAsync(cancellationToken);
+                idSal = value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
+            }
+            finally { if (shouldClose) await connection.CloseAsync(); }
+        }
 
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
