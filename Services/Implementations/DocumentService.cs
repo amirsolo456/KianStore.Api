@@ -21,48 +21,32 @@ public sealed class DocumentService : IDocumentService
         _stockService = stockService;
     }
 
-    public async Task<ApiResponse<DocumentResponse>> CreateAsync(
-        CreateDocumentRequest request,
-        CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<DocumentResponse>> CreateAsync(CreateDocumentRequest request, CancellationToken cancellationToken = default)
     {
-        if (request.Items.Count == 0)
-            throw new ApiException(400, "EMPTY_DOCUMENT", "سند حداقل باید یک قلم داشته باشد.");
+        if (request.Items.Count == 0) throw new ApiException(400, "EMPTY_DOCUMENT", "سند حداقل باید یک قلم داشته باشد.");
+        if (request.SabtDate.Length != 10) throw new ApiException(400, "INVALID_DATE", "تاریخ سند باید به صورت yyyy/MM/dd باشد.");
 
-        if (request.SabtDate.Length != 10)
-            throw new ApiException(400, "INVALID_DATE", "تاریخ سند باید به صورت yyyy/MM/dd باشد.");
-
-        var tarafExists = await _context.Tarafs.AsNoTracking().AnyAsync(
-            x => x.Id == request.IdTaraf && x.IdType == request.IdTarafType && !x.IsDisabled,
-            cancellationToken);
-        if (!tarafExists)
-            throw new ApiException(404, "CUSTOMER_NOT_FOUND", "طرف حساب مورد نظر یافت نشد.");
+        var tarafExists = await _context.Tarafs.AsNoTracking().AnyAsync(x => x.Id == request.IdTaraf && x.IdType == request.IdTarafType && !x.IsDisabled, cancellationToken);
+        if (!tarafExists) throw new ApiException(404, "CUSTOMER_NOT_FOUND", "طرف حساب مورد نظر یافت نشد.");
 
         if (!request.IsPending)
         {
-            var cashboxExists = await _context.CheckDefs.AsNoTracking().AnyAsync(
-                x => x.Id == request.IdSandogh && x.Type == request.IdSandoghType,
-                cancellationToken);
-            if (!cashboxExists)
-                throw new ApiException(409, "INVALID_CASHBOX", "صندوق/حساب انتخاب‌شده معتبر نیست.");
+            var cashboxExists = await _context.CheckDefs.AsNoTracking().AnyAsync(x => x.Id == request.IdSandogh && x.Type == request.IdSandoghType, cancellationToken);
+            if (!cashboxExists) throw new ApiException(409, "INVALID_CASHBOX", "صندوق/حساب انتخاب‌شده معتبر نیست.");
         }
 
         var distinctKalaIds = request.Items.Select(x => x.IdKala?.Trim()).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).ToList();
         var products = await _context.Kalas.AsNoTracking().Where(x => distinctKalaIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, cancellationToken);
         var stockWarnings = new List<object>();
-
         foreach (var item in request.Items)
         {
             if (item.Quantity <= 0) throw new ApiException(400, "INVALID_QUANTITY", $"تعداد کالای {item.IdKala} باید بیشتر از صفر باشد.");
             if (!products.TryGetValue(item.IdKala, out var product)) throw new ApiException(404, "PRODUCT_NOT_FOUND", $"کالا با کد {item.IdKala} یافت نشد.");
             if (product.IsDisabled) throw new ApiException(409, "PRODUCT_DISABLED", $"کالای {item.IdKala} غیرفعال است.");
-
             if (!item.IsIncoming && request.CheckStock)
             {
                 var stock = await _stockService.CheckAsync(item.IdKala, item.Quantity, request.IdAnbar, request.IdSal, cancellationToken);
-                if (!stock.IsAvailable)
-                {
-                    stockWarnings.Add(new { code = "INSUFFICIENT_STOCK", message = $"موجودی کالای {item.IdKala} کافی نبود.", stock.KalaId, stock.IdAnbar, stock.IdSal, stock.Requested, stock.Available, stock.IsAvailable });
-                }
+                if (!stock.IsAvailable) stockWarnings.Add(new { code = "INSUFFICIENT_STOCK", message = $"موجودی کالای {item.IdKala} کافی نبود.", stock.KalaId, stock.IdAnbar, stock.IdSal, stock.Requested, stock.Available, stock.IsAvailable });
             }
         }
 
@@ -71,126 +55,32 @@ public sealed class DocumentService : IDocumentService
         {
             var sanadId = await GenerateSanadIdAsync(request.IdSal, cancellationToken);
             var factorId = request.IdFaktor ?? await GenerateFactorIdAsync(request.IdSal, request.SanadType, cancellationToken);
-
             var sanad = new Sanad
             {
-                IdSal = request.IdSal,
-                Id = sanadId,
-                SanadType = request.SanadType,
-                IdAnbar = request.IdAnbar,
-                IdTaraf = request.IdTaraf,
-                IdTarafType = request.IdTarafType,
-                IdFaktor = factorId,
-                IdTypeMab = 0,
-                Takhfif = 0,
-                MabDarSad = 0,
-                MabKol = 0,
-                MabNaghd = 0,
-                MabFrosh = 0,
-                SabtDate = request.SabtDate,
-                MabCheck = 0,
-                MabBed = 0,
-                IdMasool = request.IdMasool,
-                IdTaiid = null,
-                Des = request.Des,
-                IDEijad = null,
-                IdDoreh = null,
-                CountGhest = 0,
-                DarsadGhest = 0,
-                Maliat1 = 0,
-                Maliat1Darsad = 0,
-                Maliat1Sel = false,
-                Maliat2 = 0,
-                Maliat2Darsad = 0,
-                Maliat2Sel = false,
-                MabHarGhest = 0,
-                MabKolAghsat = 0,
-                GhestSel = false,
-                KarmozdFrosh = 0,
-                TarafName2 = null,
-                Sharh = request.Sharh,
-                Takhfif2 = 0,
-                IsTasvieh = false,
-                TasviehID = 0,
-                Disable = false,
-                IDSanadEx = 0,
-                IDSanadEx2 = 0,
-                IDSanadEx3 = 0,
-                ShowInSanad = true,
-                ShowInFaktor = true,
-                TasviehDate = request.SabtDate,
-                IsTasviehDate = false,
-                IDSandogh = request.IdSandogh,
-                IDSandoghType = request.IdSandoghType,
-                MabKart = 0,
-                MabFish = 0,
-                IDKart = 0,
-                IDTypeKart = 0,
-                IsFinal = !request.IsPending,
-                IDFroshMabType = 0,
-                SanadTime = DateTime.Now.ToString("HH:mm:ss"),
-                TakhfifKala1 = false,
-                TakhfifKala2 = false,
-                TakhfifKala3 = false,
-                IsMaliat1Darsad = false,
-                IsMaliat1Kala = false,
-                IsMaliat2Darsad = false,
-                IsMaliat2Kala = false,
-                IsPorsant = false,
-                IsPorsantMabKol = false,
-                IsPorsantMabKala = false,
-                HazFaktor = 0,
-                IDHazFaktor = 0,
-                HazFaktor2 = 0,
-                IDHazFaktor2 = 0,
-                TakhfifDarsad = 0,
-                TakhfifOnvan = null,
-                MabEzaf = 0,
-                MabEzafDarsad = 0,
-                MabEzafOnvan = null,
-                SefareshID = request.SefareshID,
-                IsSavedFinal = !request.IsPending,
-                IDSanad = 0,
-                Takhfif3 = 0,
-                TakhfifKala = 0,
-                IDFish = 0,
-                IDFoodMahal = 0,
-                Tel = null,
-                Add = null,
-                CodeMeli = null,
-                Miz = null,
-                GpsLat = 0,
-                GpsLong = 0,
-                TasvieType = 0,
-                TasvieCheck = 0,
-                IDAnbar2 = request.IdAnbar,
-                IDTaraf2 = request.IdTaraf,
-                HMarketID = await GetMarketIdAsync(cancellationToken),
-                IDRef = string.Empty,
-                SanadTypeRef = 0,
-                IDRefRecive = string.Empty,
-                FroshArzesh = null,
-                TakhfifKalaArzesh = null,
-                HMaliat1 = null,
-                HMaliat2 = null,
-                TejaratCode = null,
-                StateMaliat = 0,
-                SabtDateOrg = request.SabtDate,
-                MabBonKart = 0,
-                MabBonKartTakhfif = 0,
-                Takhfif1 = 0,
-                IDTarafTahator = request.IdTaraf,
-                TasviehRozSum = null,
-                IDSanadAtf = null,
-                MabFroshCalNaghd = null,
-                MabCalNaghd = null,
-                MabKarMozd = null,
-                MabTahator = null,
-                SumMabEzafatMoaf = null,
-                IDState = null,
-                CodeMaliat = null,
-                IsTasviehFaktor = null,
-                TasviehMab = null
+                IdSal = request.IdSal, Id = sanadId, SanadType = request.SanadType, IdAnbar = request.IdAnbar,
+                IdTaraf = request.IdTaraf, IdTarafType = request.IdTarafType, IdFaktor = factorId, IdTypeMab = 0,
+                Takhfif = 0, MabDarSad = 0, MabKol = 0, MabNaghd = 0, MabFrosh = 0, SabtDate = request.SabtDate,
+                MabCheck = 0, MabBed = 0, IdMasool = request.IdMasool, IdTaiid = null, Des = request.Des,
+                IDEijad = null, IdDoreh = null, CountGhest = 0, DarsadGhest = 0, Maliat1 = 0, Maliat1Darsad = 0,
+                Maliat1Sel = false, Maliat2 = 0, Maliat2Darsad = 0, Maliat2Sel = false, MabHarGhest = 0,
+                MabKolAghsat = 0, GhestSel = false, KarmozdFrosh = 0, TarafName2 = null, Sharh = request.Sharh,
+                Takhfif2 = 0, IsTasvieh = false, TasviehID = 0, Disable = false, IDSanadEx = 0, IDSanadEx2 = 0,
+                IDSanadEx3 = 0, ShowInSanad = true, ShowInFaktor = true, TasviehDate = request.SabtDate,
+                IsTasviehDate = false, IDSandogh = request.IdSandogh, IDSandoghType = request.IdSandoghType,
+                MabKart = 0, MabFish = 0, IDKart = 0, IDTypeKart = 0, IsFinal = !request.IsPending, IDFroshMabType = 0,
+                SanadTime = DateTime.Now.ToString("HH:mm:ss"), TakhfifKala1 = false, TakhfifKala2 = false,
+                TakhfifKala3 = false, IsMaliat1Darsad = false, IsMaliat1Kala = false, IsMaliat2Darsad = false,
+                IsMaliat2Kala = false, IsPorsant = false, IsPorsantMabKol = false, IsPorsantMabKala = false,
+                HazFaktor = 0, IDHazFaktor = 0, HazFaktor2 = 0, IDHazFaktor2 = 0, TakhfifDarsad = 0,
+                TakhfifOnvan = null, MabEzaf = 0, MabEzafDarsad = 0, MabEzafOnvan = null, SefareshID = request.SefareshID,
+                IsSavedFinal = !request.IsPending, IDSanad = 0, Takhfif3 = 0, TakhfifKala = 0, IDFish = 0, IDFoodMahal = 0,
+                Tel = null, Add = null, CodeMeli = null, Miz = null, GpsLat = 0, GpsLong = 0, TasvieType = 0,
+                TasvieCheck = 0, IDAnbar2 = request.IdAnbar, IDTaraf2 = request.IdTaraf, HMarketID = await GetMarketIdAsync(cancellationToken),
+                IDRef = string.Empty, SanadTypeRef = 0, IDRefRecive = string.Empty, FroshArzesh = null, TakhfifKalaArzesh = null,
+                HMaliat1 = null, HMaliat2 = null, TejaratCode = null, StateMaliat = 0, SabtDateOrg = request.SabtDate,
+                MabBonKart = 0, MabBonKartTakhfif = 0, Takhfif1 = 0, IDTarafTahator = request.IdTaraf, TasviehRozSum = null,
+                IDSanadAtf = null, MabFroshCalNaghd = null, MabCalNaghd = null, MabKarMozd = null, MabTahator = null,
+                SumMabEzafatMoaf = null, IDState = null, CodeMaliat = null, IsTasviehFaktor = null, TasviehMab = null
             };
 
             var details = new List<SanadDetail>();
@@ -205,85 +95,29 @@ public sealed class DocumentService : IDocumentService
                 total += lineTotal;
                 details.Add(new SanadDetail
                 {
-                    IdSal = request.IdSal,
-                    IdSanad = sanadId,
-                    Id2 = row++,
-                    AtfNum = null,
-                    IdKala = product.Id,
-                    Bed = item.IsIncoming ? (double)item.Quantity : 0,
-                    Bes = item.IsIncoming ? 0 : (double)item.Quantity,
-                    BedMab = item.IsIncoming ? unitPrice : 0,
-                    BesMab = item.IsIncoming ? 0 : unitPrice,
-                    Des = item.Description,
-                    SumMab = lineTotal,
-                    IdAnbar = request.IdAnbar,
-                    IdKalaType = product.KalaType,
-                    BedMabKharid = purchaseUnitPrice,
-                    Maliat = 0,
-                    Maliat1 = false,
-                    Maliat2 = false,
-                    TakhfifDarsad = 0,
-                    PorsantDarsad = 0,
-                    HazKala = 0,
-                    HazKalaKharid = 0,
-                    IdSanjesh = product.IdSanjesh,
-                    IdSanjesh2 = product.IdSanjesh2,
-                    BedBesZarib = 1,
-                    SanadType = request.SanadType,
-                    PropKala = null,
-                    PropKala2 = null,
-                    Des1 = null,
-                    Des2 = null,
-                    Des3 = null,
-                    SumBed = null,
-                    SumBes = null,
-                    HazKala2 = null,
-                    HazKala3 = null,
-                    SumTakhfifKala = 0,
-                    HazKala1 = null,
-                    HazKalaGift1 = null,
-                    HazKalaGift2 = null,
-                    HazKalaGift3 = null,
-                    IdAttribValuesStock = string.Empty,
-                    TakhfifD2 = null,
-                    TakhfifD3 = null,
-                    TakhfifMab1 = null,
-                    TakhfifMab2 = null,
-                    MaliatD1 = null,
-                    MaliatD2 = null,
-                    TasviehRoz = null,
-                    MaliatMab1 = null,
-                    MaliatMab2 = null,
-                    SumMabTakh = null,
-                    SumMabMaliat = null,
-                    MabFroshByTakh = null,
-                    Bed2 = item.IsIncoming ? (double)item.Quantity : 0,
-                    Bes2 = item.IsIncoming ? 0 : (double)item.Quantity,
-                    BedMab2 = item.IsIncoming ? unitPrice : 0,
-                    BesMab2 = item.IsIncoming ? 0 : unitPrice,
-                    MabEzafatMoaf = null
+                    IdSal = request.IdSal, IdSanad = sanadId, Id2 = row++, AtfNum = null, IdKala = product.Id,
+                    Bed = item.IsIncoming ? (double)item.Quantity : 0, Bes = item.IsIncoming ? 0 : (double)item.Quantity,
+                    BedMab = item.IsIncoming ? unitPrice : 0, BesMab = item.IsIncoming ? 0 : unitPrice, Des = item.Description,
+                    SumMab = lineTotal, IdAnbar = request.IdAnbar, IdKalaType = product.KalaType, BedMabKharid = purchaseUnitPrice,
+                    Maliat = 0, Maliat1 = false, Maliat2 = false, TakhfifDarsad = 0, PorsantDarsad = 0, HazKala = 0,
+                    HazKalaKharid = 0, IdSanjesh = product.IdSanjesh, IdSanjesh2 = product.IdSanjesh2, BedBesZarib = 1,
+                    SanadType = request.SanadType, PropKala = null, PropKala2 = null, Des1 = null, Des2 = null, Des3 = null,
+                    SumBed = null, SumBes = null, HazKala2 = null, HazKala3 = null, SumTakhfifKala = 0, HazKala1 = null,
+                    HazKalaGift1 = null, HazKalaGift2 = null, HazKalaGift3 = null, IdAttribValuesStock = string.Empty,
+                    TakhfifD2 = null, TakhfifD3 = null, TakhfifMab1 = null, TakhfifMab2 = null, MaliatD1 = null, MaliatD2 = null,
+                    TasviehRoz = null, MaliatMab1 = null, MaliatMab2 = null, SumMabTakh = null, SumMabMaliat = null,
+                    MabFroshByTakh = null, Bed2 = item.IsIncoming ? (double)item.Quantity : 0, Bes2 = item.IsIncoming ? 0 : (double)item.Quantity,
+                    BedMab2 = item.IsIncoming ? unitPrice : 0, BesMab2 = item.IsIncoming ? 0 : unitPrice, MabEzafatMoaf = null
                 });
             }
 
-            sanad.MabKol = total;
-            sanad.MabFrosh = total;
-            sanad.MabNaghd = 0;
-            sanad.MabBed = total;
-            _context.Sanads.Add(sanad);
-            _context.SanadDetails.AddRange(details);
-            await _context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
+            sanad.MabKol = total; sanad.MabFrosh = total; sanad.MabNaghd = 0; sanad.MabBed = total;
+            _context.Sanads.Add(sanad); _context.SanadDetails.AddRange(details);
+            await _context.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
             var response = Map(sanad, details);
-            return stockWarnings.Count > 0
-                ? ApiResponse<DocumentResponse>.SuccessWithWarningResult(response, stockWarnings, "سند ثبت شد، اما موجودی یک یا چند کالا کافی نبود.", "STOCK_WARNING")
-                : ApiResponse<DocumentResponse>.SuccessResult(response, "سند با موفقیت ثبت شد.");
+            return stockWarnings.Count > 0 ? ApiResponse<DocumentResponse>.SuccessWithWarningResult(response, stockWarnings, "سند ثبت شد، اما موجودی یک یا چند کالا کافی نبود.", "STOCK_WARNING") : ApiResponse<DocumentResponse>.SuccessResult(response, "سند با موفقیت ثبت شد.");
         }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+        catch { await transaction.RollbackAsync(cancellationToken); throw; }
     }
 
     public async Task<ApiResponse<DocumentResponse>> GetAsync(int idSal, string id, CancellationToken cancellationToken = default)
@@ -297,31 +131,20 @@ public sealed class DocumentService : IDocumentService
 
     public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(int idSal, int sanadType = 12, int page = 1, int pageSize = 30, CancellationToken cancellationToken = default)
     {
-        // idSal=0 means current/latest fiscal year. Read it through SQL because this
-        // DbContext intentionally does not expose a SalMali DbSet.
-        if (idSal <= 0)
-        {
-            var connection = _context.Database.GetDbConnection();
-            var shouldClose = connection.State != ConnectionState.Open;
-            if (shouldClose) await connection.OpenAsync(cancellationToken);
-            try
-            {
-                await using var command = connection.CreateCommand();
-                command.CommandText = "SELECT ISNULL(MAX(ID), 0) FROM dbo.SalMali;";
-                command.CommandType = CommandType.Text;
-                command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
-                var value = await command.ExecuteScalarAsync(cancellationToken);
-                idSal = value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
-            }
-            finally { if (shouldClose) await connection.CloseAsync(); }
-        }
-
+        // idSal <= 0 means all fiscal years. A sales history must contain every sale
+        // regardless of where it was created (mobile or website) or which fiscal year it belongs to.
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var sanads = await _context.Sanads.AsNoTracking()
-            .Where(x => x.IdSal == idSal && x.SanadType == sanadType && !x.Disable)
-            .OrderByDescending(x => x.IdFaktor)
+        var sanadsQuery = _context.Sanads.AsNoTracking()
+            .Where(x => x.SanadType == sanadType && !x.Disable);
+
+        if (idSal > 0)
+            sanadsQuery = sanadsQuery.Where(x => x.IdSal == idSal);
+
+        var sanads = await sanadsQuery
+            .OrderByDescending(x => x.IdSal)
+            .ThenByDescending(x => x.IdFaktor)
             .ThenByDescending(x => x.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -331,34 +154,27 @@ public sealed class DocumentService : IDocumentService
             return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(Array.Empty<DocumentResponse>(), "تاریخچه فروش خالی است.");
 
         var sanadIds = sanads.Select(x => x.Id).ToList();
-        var details = await _context.SanadDetails.AsNoTracking().Where(x => x.IdSal == idSal && sanadIds.Contains(x.IdSanad)).OrderBy(x => x.IdSanad).ThenBy(x => x.Id2).ToListAsync(cancellationToken);
+        var salIds = sanads.Select(x => x.IdSal).Distinct().ToList();
+        var details = await _context.SanadDetails.AsNoTracking()
+            .Where(x => sanadIds.Contains(x.IdSanad) && salIds.Contains(x.IdSal))
+            .OrderBy(x => x.IdSal).ThenBy(x => x.IdSanad).ThenBy(x => x.Id2)
+            .ToListAsync(cancellationToken);
         var tarafIds = sanads.Select(x => x.IdTaraf).Distinct().ToList();
         var tarafs = await _context.Tarafs.AsNoTracking().Where(x => tarafIds.Contains(x.Id)).ToListAsync(cancellationToken);
-        var detailLookup = details.ToLookup(x => x.IdSanad);
-        var result = sanads.Select(s => Map(s, detailLookup[s.Id].ToList(), tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name)).ToList();
+        var detailLookup = details.ToLookup(x => x.IdSal + "|" + x.IdSanad);
+        var result = sanads.Select(s => Map(s, detailLookup[s.IdSal + "|" + s.Id].ToList(), tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name)).ToList();
         return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(result, "تاریخچه فروش با موفقیت دریافت شد.");
     }
 
     private async Task<string> GenerateSanadIdAsync(int idSal, CancellationToken cancellationToken)
     {
         var connection = _context.Database.GetDbConnection();
-        var shouldClose = connection.State != ConnectionState.Open;
-        if (shouldClose) await connection.OpenAsync(cancellationToken);
+        var shouldClose = connection.State != ConnectionState.Open; if (shouldClose) await connection.OpenAsync(cancellationToken);
         try
         {
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT dbo.GetNewIDAllSanadNewFunc(@IDSal);";
-            command.CommandType = CommandType.Text;
-            command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@IDSal";
-            parameter.DbType = DbType.Int32;
-            parameter.Value = idSal;
-            command.Parameters.Add(parameter);
-            var value = await command.ExecuteScalarAsync(cancellationToken);
-            var id = value?.ToString();
-            if (string.IsNullOrWhiteSpace(id)) throw new InvalidOperationException("سیستم نتوانست شماره داخلی سند را تولید کند.");
-            return id;
+            await using var command = connection.CreateCommand(); command.CommandText = "SELECT dbo.GetNewIDAllSanadNewFunc(@IDSal);"; command.CommandType = CommandType.Text; command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
+            var parameter = command.CreateParameter(); parameter.ParameterName = "@IDSal"; parameter.DbType = DbType.Int32; parameter.Value = idSal; command.Parameters.Add(parameter);
+            var value = await command.ExecuteScalarAsync(cancellationToken); var id = value?.ToString(); if (string.IsNullOrWhiteSpace(id)) throw new InvalidOperationException("سیستم نتوانست شماره داخلی سند را تولید کند."); return id;
         }
         finally { if (shouldClose) await connection.CloseAsync(); }
     }
@@ -368,17 +184,11 @@ public sealed class DocumentService : IDocumentService
 
     private async Task<int> GetMarketIdAsync(CancellationToken cancellationToken)
     {
-        var connection = _context.Database.GetDbConnection();
-        var shouldClose = connection.State != ConnectionState.Open;
-        if (shouldClose) await connection.OpenAsync(cancellationToken);
+        var connection = _context.Database.GetDbConnection(); var shouldClose = connection.State != ConnectionState.Open; if (shouldClose) await connection.OpenAsync(cancellationToken);
         try
         {
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT ISNULL(IDMarket, 0) FROM dbo.Inf WHERE ID = 1;";
-            command.CommandType = CommandType.Text;
-            command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
-            var value = await command.ExecuteScalarAsync(cancellationToken);
-            return value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
+            await using var command = connection.CreateCommand(); command.CommandText = "SELECT ISNULL(IDMarket, 0) FROM dbo.Inf WHERE ID = 1;"; command.CommandType = CommandType.Text; command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
+            var value = await command.ExecuteScalarAsync(cancellationToken); return value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
         }
         finally { if (shouldClose) await connection.CloseAsync(); }
     }
@@ -387,27 +197,10 @@ public sealed class DocumentService : IDocumentService
     {
         return new DocumentResponse
         {
-            IdSal = sanad.IdSal,
-            Id = sanad.Id,
-            SanadType = sanad.SanadType,
-            IdAnbar = sanad.IdAnbar,
-            IdTaraf = sanad.IdTaraf,
-            IdTarafType = sanad.IdTarafType,
-            IdFaktor = sanad.IdFaktor,
-            SabtDate = sanad.SabtDate,
-            TotalAmount = sanad.MabKol,
-            IsFinal = sanad.IsFinal,
-            Description = sanad.Des,
-            TarafName = tarafName,
-            Items = details.Select(x => new DocumentItemResponse
-            {
-                Id2 = x.Id2,
-                IdKala = x.IdKala,
-                Quantity = x.Bes2 > 0 ? x.Bes2 : x.Bes,
-                UnitPrice = x.BesMab2 > 0 ? x.BesMab2 : x.BesMab,
-                TotalAmount = x.SumMab,
-                PurchasePrice = x.BedMabKharid
-            }).ToList()
+            IdSal = sanad.IdSal, Id = sanad.Id, SanadType = sanad.SanadType, IdAnbar = sanad.IdAnbar, IdTaraf = sanad.IdTaraf,
+            IdTarafType = sanad.IdTarafType, IdFaktor = sanad.IdFaktor, SabtDate = sanad.SabtDate, TotalAmount = sanad.MabKol,
+            IsFinal = sanad.IsFinal, Description = sanad.Des, TarafName = tarafName,
+            Items = details.Select(x => new DocumentItemResponse { Id2 = x.Id2, IdKala = x.IdKala, Quantity = x.Bes2 > 0 ? x.Bes2 : x.Bes, UnitPrice = x.BesMab2 > 0 ? x.BesMab2 : x.BesMab, TotalAmount = x.SumMab, PurchasePrice = x.BedMabKharid }).ToList()
         };
     }
 }
