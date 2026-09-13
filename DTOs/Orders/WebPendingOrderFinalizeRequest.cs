@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace KianStore.Api.DTOs.Orders;
 
@@ -21,7 +22,20 @@ public sealed class WebPendingOrderFinalizeRequest
 
 public sealed class WebPendingOrderItemFinalizeRequest
 {
-    [Required, StringLength(20)] public string KalaId { get; init; } = null!;
+    private string? _kalaId;
+
+    // Accept the normal camelCase kalaId as well as legacy clients that send
+    // idKala. The controller continues to consume KalaId uniformly.
+    [Required, StringLength(20)]
+    public string? KalaId
+    {
+        get => string.IsNullOrWhiteSpace(_kalaId) ? IdKala : _kalaId;
+        init => _kalaId = value;
+    }
+
+    [JsonPropertyName("idKala")]
+    public string? IdKala { get; init; }
+
     [Range(typeof(decimal), "0", "79228162514264337593543950335")]
     public decimal PurchasePrice { get; init; }
 }
