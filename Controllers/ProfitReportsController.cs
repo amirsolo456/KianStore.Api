@@ -31,10 +31,13 @@ public sealed class ProfitReportsController : ControllerBase
                 "INVALID_DATE_RANGE",
                 "تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد."));
 
-        // Profit is intentionally calculated only from sales invoices.
-        // The captured purchase price stored on each sales line is the cost basis.
+        // Profit includes normal sales (12) and partner-warehouse sales (15).
+        // Partner-warehouse sales do not affect own inventory, but their captured
+        // partner cost is still used as the cost basis for profit calculation.
         var details = await _context.SanadDetails.AsNoTracking()
-            .Where(d => d.IdSal == idSal && d.SanadType == 12 && d.Bes2 > 0)
+            .Where(d => d.IdSal == idSal &&
+                        (d.SanadType == 12 || d.SanadType == 15) &&
+                        d.Bes2 > 0)
             .Join(
                 _context.Sanads.AsNoTracking(),
                 d => new { d.IdSal, Id = d.IdSanad },
