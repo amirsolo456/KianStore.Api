@@ -43,6 +43,13 @@ public sealed class DocumentsController : ControllerBase
         return await CreatedResponseAsync(result, cancellationToken, "سند خرید ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود.");
     }
 
+    [HttpDelete("purchase/{idSal:int}/{id}")]
+    public async Task<IActionResult> DeletePurchase(int idSal, string id, CancellationToken cancellationToken)
+    {
+        var result = await _mutationService.DeletePurchaseAsync(idSal, id, GetCurrentUserId(null), cancellationToken);
+        return Ok(result);
+    }
+
     [HttpPost("partner-sale")]
     public async Task<IActionResult> CreatePartnerSale([FromBody] JsonElement body, CancellationToken cancellationToken)
     {
