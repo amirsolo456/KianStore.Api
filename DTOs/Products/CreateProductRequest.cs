@@ -4,9 +4,6 @@ namespace KianStore.Api.DTOs.Products;
 
 public sealed class CreateProductRequest
 {
-    [Required, MaxLength(20)]
-    public string Code { get; set; } = null!;
-
     [Required, MaxLength(50)]
     public string Name { get; set; } = null!;
 
