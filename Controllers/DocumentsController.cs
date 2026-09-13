@@ -55,6 +55,8 @@ public sealed class DocumentsController : ControllerBase
         [FromQuery] int pageSize = 30,
         CancellationToken cancellationToken = default)
     {
+        // History is intentionally driven by SanadType: 12=sale and 11=purchase.
+        // Pending website documents (51) are served only by /api/web-orders/pending.
         var result = await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, cancellationToken);
         return Ok(result);
     }
