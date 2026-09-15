@@ -1,14 +1,17 @@
+using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Documents;
 using KianStore.Api.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace KianStore.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/documents")]
 public sealed class DocumentsController : ControllerBase
@@ -55,7 +58,6 @@ public sealed class DocumentsController : ControllerBase
         return Ok(result);
     }
 
-    // Compatibility route for mobile builds that call /api/documents/{idSal}/{id}.
     [HttpDelete("{idSal:int}/{id}")]
     public async Task<IActionResult> DeleteLegacy(int idSal, string id, CancellationToken cancellationToken)
     {
@@ -71,7 +73,6 @@ public sealed class DocumentsController : ControllerBase
         };
     }
 
-    // Compatibility route for older clients that send only the document id.
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteLegacyById(string id, CancellationToken cancellationToken)
     {
@@ -128,7 +129,6 @@ public sealed class DocumentsController : ControllerBase
         }
         catch (ApiException ex) when (ex.Code == "PARTNER_SALE_NOT_FOUND")
         {
-            // Backward compatibility: older mobile builds used this route for all document types.
             var result = await _mutationService.DeletePurchaseAsync(idSal, id, GetCurrentUserId(null), cancellationToken);
             return Ok(result);
         }
@@ -166,8 +166,10 @@ public sealed class DocumentsController : ControllerBase
 
     private int? GetCurrentUserId(int? fallback)
     {
-        if (Request.Headers.TryGetValue("X-User-Id", out var raw) && int.TryParse(raw.FirstOrDefault(), out var userId) && userId > 0)
-            return userId;
+        var claimId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (int.TryParse(claimId, out var authenticatedUserId) && authenticatedUserId > 0)
+            return authenticatedUserId;
+
         return fallback;
     }
 }
