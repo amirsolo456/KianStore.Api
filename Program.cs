@@ -194,7 +194,15 @@ END;
 IF NOT EXISTS (SELECT 1 FROM dbo.SmsTemplate WHERE Name = N'templatemobile')
 BEGIN
     INSERT INTO dbo.SmsTemplate (Name, TemplateText, IsActive)
-    VALUES (N'templatemobile', N'{{token}} {{token2}}', 1);
+    VALUES (N'templatemobile', N'دامداری آریا دام خاتون\nسفارش شما با شماره فاکتور: %token\nبا موفقیت ثبت گردید 🌺🙏\n\nشماره تماس پشتیبانی:\n...\n\nاین کد رو میتونید در خرید بعدیتون استفاده کنید\n(کد هدیه): %token2', 1);
+END
+ELSE
+BEGIN
+    UPDATE dbo.SmsTemplate
+    SET TemplateText = N'دامداری آریا دام خاتون\nسفارش شما با شماره فاکتور: %token\nبا موفقیت ثبت گردید 🌺🙏\n\nشماره تماس پشتیبانی:\n...\n\nاین کد رو میتونید در خرید بعدیتون استفاده کنید\n(کد هدیه): %token2',
+        IsActive = 1,
+        UpdatedAt = SYSUTCDATETIME()
+    WHERE Name = N'templatemobile';
 END;
 ";
     db.Database.ExecuteSqlRaw(sql);
