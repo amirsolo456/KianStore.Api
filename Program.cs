@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using KianStore.Api.Data;
 using KianStore.Api.Middleware;
@@ -37,7 +38,24 @@ builder.Services.AddScoped<MobileAuthService>();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("Jwt__Key");
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
-    throw new InvalidOperationException("JWT signing key is missing or too short. Configure Jwt:Key or Jwt__Key with at least 32 bytes.");
+{
+    var securityDirectory = Path.Combine(AppContext.BaseDirectory, ".security");
+    Directory.CreateDirectory(securityDirectory);
+    var keyPath = Path.Combine(securityDirectory, "jwt.key");
+
+    if (File.Exists(keyPath))
+    {
+        jwtKey = File.ReadAllText(keyPath).Trim();
+    }
+
+    if (Encoding.UTF8.GetByteCount(jwtKey ?? string.Empty) < 32)
+    {
+        jwtKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+        File.WriteAllText(keyPath, jwtKey);
+    }
+
+    builder.Configuration["Jwt:Key"] = jwtKey;
+}
 
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "KianStore.Api";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "KianStore.Mobile";
@@ -71,9 +89,6 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// SanadType=113 (فروش از انبار همکار) is a valid document type. Some existing
-// databases have a legacy CK_Sanad_SanadType constraint that does not include
-// 113. Extend that exact predicate instead of weakening/removing the check.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KianStoreDbContext>();
