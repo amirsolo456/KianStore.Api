@@ -38,7 +38,7 @@ public sealed class AuthController : ControllerBase
     [HttpGet("me")]
     public IActionResult Me()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
         var userName = User.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
         var fullName = User.FindFirstValue("full_name") ?? string.Empty;
         var access = int.TryParse(User.FindFirstValue("access"), out var parsedAccess) ? parsedAccess : 0;
