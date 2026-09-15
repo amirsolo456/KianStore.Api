@@ -21,3 +21,13 @@ public sealed class UpdateSmsTemplateRequest
     public string TemplateText { get; init; } = null!;
     public bool IsActive { get; init; } = true;
 }
+
+public sealed class OrderRegistrationSmsRequest
+{
+    public int IdSal { get; init; }
+    public string IdSanad { get; init; } = null!;
+    public int PersonId { get; init; }
+    public string Mobile { get; init; } = null!;
+    public int FactorNumber { get; init; }
+    public string? DiscountCode { get; init; }
+}

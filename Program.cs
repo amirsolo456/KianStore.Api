@@ -32,6 +32,7 @@ builder.Services.AddScoped<IDocumentMutationService, DocumentMutationService>();
 builder.Services.AddScoped<ISanadAuditService, SanadAuditService>();
 builder.Services.AddScoped<DiscountCodeService>();
 builder.Services.AddScoped<SmsService>();
+builder.Services.AddScoped<OrderRegistrationSmsService>();
 builder.Services.AddScoped<MobileAuthService>();
 
 var jwtKey = JwtKeyProvider.GetOrCreate(builder.Configuration);
@@ -109,6 +110,17 @@ BEGIN
                  + @definition + N' OR [SanadType] = 113);';
         EXEC sys.sp_executesql @sql;
     END;
+END;
+
+IF OBJECT_ID(N'dbo.SmsLog', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.SmsLog', N'IdSal') IS NULL ALTER TABLE dbo.SmsLog ADD IdSal int NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'IdSanad') IS NULL ALTER TABLE dbo.SmsLog ADD IdSanad nvarchar(10) NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'ProviderStatus') IS NULL ALTER TABLE dbo.SmsLog ADD ProviderStatus int NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'ProviderStatusText') IS NULL ALTER TABLE dbo.SmsLog ADD ProviderStatusText nvarchar(200) NULL;
+    IF COL_LENGTH(N'dbo.SmsLog', N'LastStatusCheckedAt') IS NULL ALTER TABLE dbo.SmsLog ADD LastStatusCheckedAt datetime2 NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_SmsLog_Document' AND object_id = OBJECT_ID(N'dbo.SmsLog'))
+        CREATE INDEX IX_SmsLog_Document ON dbo.SmsLog(IdSal, IdSanad, CreatedAt DESC);
 END;";
     db.Database.ExecuteSqlRaw(sql);
 }
