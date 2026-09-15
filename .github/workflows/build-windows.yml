@@ -60,4 +60,4 @@ jobs:
           path: artifact
           retention-days: 7
 
-# Trigger publish after dedicated SanadType 113 history endpoint was added.
+# Build includes exact Kavenegar templatemobile token3 configuration.
