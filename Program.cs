@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using KianStore.Api.Data;
 using KianStore.Api.Middleware;
@@ -27,7 +26,6 @@ builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<ICustomerRepository, CustomerRepository>();
 builder.Services.AddScoped<IStockRepository, StockRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
-builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IStockService, StockService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IDocumentMutationService, DocumentMutationService>();
@@ -36,27 +34,7 @@ builder.Services.AddScoped<DiscountCodeService>();
 builder.Services.AddScoped<SmsService>();
 builder.Services.AddScoped<MobileAuthService>();
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("Jwt__Key");
-if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
-{
-    var securityDirectory = Path.Combine(AppContext.BaseDirectory, ".security");
-    Directory.CreateDirectory(securityDirectory);
-    var keyPath = Path.Combine(securityDirectory, "jwt.key");
-
-    if (File.Exists(keyPath))
-    {
-        jwtKey = File.ReadAllText(keyPath).Trim();
-    }
-
-    if (Encoding.UTF8.GetByteCount(jwtKey ?? string.Empty) < 32)
-    {
-        jwtKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
-        File.WriteAllText(keyPath, jwtKey);
-    }
-
-    builder.Configuration["Jwt:Key"] = jwtKey;
-}
-
+var jwtKey = JwtKeyProvider.GetOrCreate(builder.Configuration);
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "KianStore.Api";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "KianStore.Mobile";
 
