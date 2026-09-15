@@ -194,7 +194,7 @@ END;
 IF NOT EXISTS (SELECT 1 FROM dbo.SmsTemplate WHERE Name = N'templatemobile')
 BEGIN
     INSERT INTO dbo.SmsTemplate (Name, TemplateText, IsActive)
-    VALUES (N'templatemobile', N'{token} {token2}', 1);
+    VALUES (N'templatemobile', N'{{token}} {{token2}}', 1);
 END;
 ";
     db.Database.ExecuteSqlRaw(sql);
