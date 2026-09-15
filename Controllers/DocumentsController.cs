@@ -1,17 +1,14 @@
-using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Documents;
 using KianStore.Api.Services.Interfaces;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace KianStore.Api.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/documents")]
 public sealed class DocumentsController : ControllerBase
@@ -166,10 +163,9 @@ public sealed class DocumentsController : ControllerBase
 
     private int? GetCurrentUserId(int? fallback)
     {
-        var claimId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (int.TryParse(claimId, out var authenticatedUserId) && authenticatedUserId > 0)
-            return authenticatedUserId;
-
+        if (Request.Headers.TryGetValue("X-User-Id", out var raw) &&
+            int.TryParse(raw.FirstOrDefault(), out var userId) && userId > 0)
+            return userId;
         return fallback;
     }
 }
