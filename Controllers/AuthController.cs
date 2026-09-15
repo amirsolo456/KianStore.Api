@@ -39,7 +39,7 @@ public sealed class AuthController : ControllerBase
             !int.TryParse(raw.FirstOrDefault(), out var userId) || userId <= 0)
             return BadRequest(ApiResponse<object>.ErrorResult("USER_ID_REQUIRED", "شناسه کاربر ارسال نشده است."));
 
-        var user = await _db.Set<Models.KianStore.Users>()
+        var user = await _db.Set<KianStore.Api.Models.KianStore.Users>()
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == userId, ct);
 
