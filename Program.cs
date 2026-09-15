@@ -1,13 +1,10 @@
-using System.Text;
 using KianStore.Api.Data;
 using KianStore.Api.Middleware;
 using KianStore.Api.Repositories.Implementations;
 using KianStore.Api.Repositories.Interfaces;
 using KianStore.Api.Services.Implementations;
 using KianStore.Api.Services.Interfaces;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,34 +32,6 @@ builder.Services.AddScoped<SmsService>();
 builder.Services.AddScoped<OrderRegistrationSmsService>();
 builder.Services.AddScoped<MobileAuthService>();
 
-var jwtKey = JwtKeyProvider.GetOrCreate(builder.Configuration);
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "KianStore.Api";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "KianStore.Mobile";
-
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-        options.SaveToken = false;
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-            ValidateIssuer = true,
-            ValidIssuer = jwtIssuer,
-            ValidateAudience = true,
-            ValidAudience = jwtAudience,
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromSeconds(30),
-            NameClaimType = System.Security.Claims.ClaimTypes.Name,
-            RoleClaimType = System.Security.Claims.ClaimTypes.Role
-        };
-    });
-
-// Mobile authentication is intentionally one-time login only. All API endpoints
-// are allowed without a Bearer token so the Flutter client does not need to send
-// or refresh any token after the initial username/password check.
 builder.Services.AddAuthorization(options =>
 {
     options.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
@@ -70,7 +39,8 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
-builder.Services.AddCors(options => options.AddPolicy("FlutterWeb", policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+builder.Services.AddCors(options => options.AddPolicy("FlutterWeb", policy =>
+    policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -134,9 +104,16 @@ END;";
 }
 
 app.UseMiddleware<GlobalExceptionMiddleware>();
-if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); } else { app.UseHttpsRedirection(); }
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+else
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors("FlutterWeb");
-app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
