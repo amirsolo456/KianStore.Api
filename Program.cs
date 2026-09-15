@@ -60,7 +60,15 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+// Mobile authentication is intentionally one-time login only. All API endpoints
+// are allowed without a Bearer token so the Flutter client does not need to send
+// or refresh any token after the initial username/password check.
+builder.Services.AddAuthorization(options =>
+{
+    options.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAssertion(_ => true)
+        .Build();
+});
 
 builder.Services.AddCors(options => options.AddPolicy("FlutterWeb", policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddEndpointsApiExplorer();
