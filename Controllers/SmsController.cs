@@ -9,9 +9,9 @@ namespace KianStore.Api.Controllers;
 public sealed class SmsController : ControllerBase
 {
     private readonly SmsService _service;
-    private readonly OrderRegistrationSmsService _orderRegistrationSmsService;
+    private readonly OrderRegistrationSmsServiceV2 _orderRegistrationSmsService;
 
-    public SmsController(SmsService service, OrderRegistrationSmsService orderRegistrationSmsService)
+    public SmsController(SmsService service, OrderRegistrationSmsServiceV2 orderRegistrationSmsService)
     {
         _service = service;
         _orderRegistrationSmsService = orderRegistrationSmsService;
