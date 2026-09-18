@@ -19,11 +19,18 @@ public sealed class OrderRegistrationSmsServiceV2
 
     public async Task<object> SaveResultAsync(OrderRegistrationSmsResultRequest request, CancellationToken ct = default)
     {
-        if (request.IdSal <= 0 || string.IsNullOrWhiteSpace(request.IdSanad) || request.PersonId <= 0 || request.FactorNumber <= 0)
+        if (request.IdSal <= 0 ||
+            string.IsNullOrWhiteSpace(request.IdSanad) ||
+            request.PersonId <= 0 ||
+            request.FactorNumber <= 0)
+        {
             throw new ArgumentException("اطلاعات سند برای ثبت نتیجه پیامک کامل نیست.");
+        }
 
         var sanad = await _context.Sanads
-            .FirstOrDefaultAsync(x => x.IdSal == request.IdSal && x.Id == request.IdSanad, ct);
+            .FirstOrDefaultAsync(
+                x => x.IdSal == request.IdSal && x.Id == request.IdSanad,
+                ct);
 
         if (sanad == null)
             throw new KeyNotFoundException("سند مورد نظر یافت نشد.");
@@ -41,14 +48,17 @@ public sealed class OrderRegistrationSmsServiceV2
             .Select(x => (int?)x.Id)
             .FirstOrDefaultAsync(ct);
 
-        var discount = string.IsNullOrWhiteSpace(request.DiscountCode) ? null : request.DiscountCode.Trim();
-        var message = $"{TemplateName}: token={request.FactorNumber}; token3={discount ?? string.Empty}";
+        var discount = string.IsNullOrWhiteSpace(request.DiscountCode)
+            ? null
+            : request.DiscountCode!.Trim();
 
         var log = await _context.SmsLogs
-            .FirstOrDefaultAsync(x =>
+            .Where(x =>
                 x.IdSal == request.IdSal &&
                 x.IdSanad == request.IdSanad &&
-                x.Message.StartsWith(TemplateName + ":"), ct);
+                x.Message.StartsWith(TemplateName + ":"))
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
 
         if (log == null)
         {
@@ -58,7 +68,7 @@ public sealed class OrderRegistrationSmsServiceV2
                 IdSal = request.IdSal,
                 IdSanad = request.IdSanad,
                 Mobile = mobile,
-                Message = message,
+                Message = $"{TemplateName}: token={request.FactorNumber}; token3={discount ?? string.Empty}",
                 TemplateId = templateId,
                 CreatedAt = DateTime.UtcNow
             };
@@ -69,16 +79,24 @@ public sealed class OrderRegistrationSmsServiceV2
         log.IdSal = request.IdSal;
         log.IdSanad = request.IdSanad;
         log.Mobile = mobile;
-        log.Message = message;
+        log.Message = $"{TemplateName}: token={request.FactorNumber}; token3={discount ?? string.Empty}";
         log.TemplateId = templateId;
         log.Status = request.SmsSent ? 2 : 3;
-        log.Provider = string.IsNullOrWhiteSpace(request.Provider) ? "Kavenegar" : request.Provider.Trim();
-        log.ProviderMessageId = string.IsNullOrWhiteSpace(request.ProviderMessageId) ? null : request.ProviderMessageId.Trim();
+        log.Provider = string.IsNullOrWhiteSpace(request.Provider)
+            ? "Kavenegar"
+            : request.Provider!.Trim();
+        log.ProviderMessageId = string.IsNullOrWhiteSpace(request.ProviderMessageId)
+            ? null
+            : request.ProviderMessageId!.Trim();
         log.ProviderStatus = request.ProviderStatus;
-        log.ProviderStatusText = string.IsNullOrWhiteSpace(request.ProviderStatusText) ? null : request.ProviderStatusText.Trim();
+        log.ProviderStatusText = string.IsNullOrWhiteSpace(request.ProviderStatusText)
+            ? null
+            : request.ProviderStatusText!.Trim();
         log.ErrorMessage = request.SmsSent
             ? null
-            : (string.IsNullOrWhiteSpace(request.ErrorMessage) ? "ارسال پیامک ناموفق بود." : request.ErrorMessage.Trim());
+            : (string.IsNullOrWhiteSpace(request.ErrorMessage)
+                ? "ارسال پیامک ناموفق بود."
+                : request.ErrorMessage!.Trim());
         log.LastStatusCheckedAt = DateTime.UtcNow;
 
         sanad.Sharh = MergeSmsStatusIntoSharh(
@@ -107,6 +125,50 @@ public sealed class OrderRegistrationSmsServiceV2
         };
     }
 
+    private static string MergeSmsStatusIntoSharh(
+        string? current,
+        bool smsSent,
+        string? providerMessageId,
+        int? providerStatus,
+        string? providerStatusText,
+        string? errorMessage)
+    {
+        const string prefix = "[SMS_STATUS]";
+        var status = smsSent ? "sent" : "failed";
+        var parts = new List<string>
+        {
+            prefix,
+            $"status={status}",
+            "provider=Kavenegar"
+        };
+
+        if (!string.IsNullOrWhiteSpace(providerMessageId))
+            parts.Add($"messageId={providerMessageId!.Trim()}");
+
+        if (providerStatus.HasValue)
+            parts.Add($"providerStatus={providerStatus.Value}");
+
+        if (!string.IsNullOrWhiteSpace(providerStatusText))
+            parts.Add($"providerText={providerStatusText!.Trim()}");
+
+        if (!smsSent && !string.IsNullOrWhiteSpace(errorMessage))
+            parts.Add($"error={errorMessage!.Trim()}");
+
+        var newStatus = string.Join(" | ", parts);
+
+        if (string.IsNullOrWhiteSpace(current))
+            return newStatus;
+
+        var lines = current
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(x => !x.TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        lines.Add(newStatus);
+
+        var result = string.Join(Environment.NewLine, lines);
+        return result.Length > 2000 ? result[^2000..] : result;
+    }
 
     public async Task<object> GetStatusAsync(int idSal, string idSanad, CancellationToken ct = default)
     {
