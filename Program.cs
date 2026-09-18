@@ -30,7 +30,6 @@ builder.Services.AddScoped<IDocumentMutationService, DocumentMutationService>();
 builder.Services.AddScoped<ISanadAuditService, SanadAuditService>();
 builder.Services.AddScoped<DiscountCodeService>();
 builder.Services.AddScoped<SmsService>();
-builder.Services.AddScoped<OrderRegistrationSmsService>();
 builder.Services.AddScoped<OrderRegistrationSmsServiceV2>();
 builder.Services.AddScoped<MobileAuthService>();
 
