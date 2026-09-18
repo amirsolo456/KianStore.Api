@@ -17,12 +17,6 @@ public sealed class SmsController : ControllerBase
         _orderRegistrationSmsService = orderRegistrationSmsService;
     }
 
-    [HttpPost("document-status")]
-    public async Task<IActionResult> UpdateDocumentStatus(
-        [FromBody] DocumentSmsStatusRequest request,
-        CancellationToken ct)
-        => Ok(await _service.UpdateDocumentSmsStatusAsync(request, ct));
-
     [HttpPost("send")]
     public async Task<IActionResult> Send([FromBody] SendSmsRequest request, CancellationToken ct)
         => Ok(await _service.SendAsync(request, ct));
@@ -47,7 +41,9 @@ public sealed class SmsController : ControllerBase
     }
 
     [HttpPost("document-status")]
-    public async Task<IActionResult> UpdateDocumentSmsStatus([FromBody] DocumentSmsStatusRequest request, CancellationToken ct)
+    public async Task<IActionResult> UpdateDocumentSmsStatus(
+        [FromBody] DocumentSmsStatusRequest request,
+        CancellationToken ct)
         => Ok(await _orderRegistrationSmsService.SendAsync(request, ct));
 
     [HttpGet("order-status/{idSal:int}/{idSanad}")]
@@ -55,6 +51,11 @@ public sealed class SmsController : ControllerBase
         => Ok(await _orderRegistrationSmsService.GetStatusAsync(idSal, idSanad, ct));
 
     [HttpGet("order-statuses")]
-    public async Task<IActionResult> OrderStatuses([FromQuery] int idSal, [FromQuery] int sanadType = 12, [FromQuery] int page = 1, [FromQuery] int pageSize = 30, CancellationToken ct = default)
+    public async Task<IActionResult> OrderStatuses(
+        [FromQuery] int idSal,
+        [FromQuery] int sanadType = 12,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 30,
+        CancellationToken ct = default)
         => Ok(await _orderRegistrationSmsService.GetStatusesAsync(idSal, sanadType, page, pageSize, ct));
 }
