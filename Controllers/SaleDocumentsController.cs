@@ -24,8 +24,9 @@ public sealed class SaleDocumentsController : ControllerBase
     public async Task<IActionResult> Delete(
         int idSal,
         string id,
+        [FromBody] DeleteSaleDocumentRequest? request,
         CancellationToken cancellationToken)
-        => Ok(await _service.DeleteAsync(idSal, id, GetCurrentUserId(), cancellationToken));
+        => Ok(await _service.DeleteAsync(idSal, id, GetCurrentUserId(), request?.Password, cancellationToken));
 
     private int? GetCurrentUserId()
     {
