@@ -39,7 +39,7 @@ public sealed class OrderRegistrationSmsService
         }
         if (string.IsNullOrWhiteSpace(discount)) throw new InvalidOperationException("کد تخفیف خرید بعدی قابل تولید نبود.");
         var templateId = await _context.SmsTemplates.AsNoTracking().Where(x => x.Name == TemplateName && x.IsActive).Select(x => (int?)x.Id).FirstOrDefaultAsync(ct);
-        var log = new SmsLog { PersonId = request.PersonId, IdSal = request.IdSal, IdSanad = request.IdSanad, Mobile = mobile, Message = $"{TemplateName}: token={request.FactorNumber}; token2={discount}", TemplateId = templateId, Status = 1, Provider = "Kavenegar", CreatedAt = DateTime.UtcNow };
+        var log = new SmsLog { PersonId = request.PersonId, IdSal = request.IdSal, IdSanad = request.IdSanad, Mobile = mobile, Message = $"{TemplateName}: token={request.FactorNumber}; token3={discount}", TemplateId = templateId, Status = 1, Provider = "Kavenegar", CreatedAt = DateTime.UtcNow };
         _context.SmsLogs.Add(log); await _context.SaveChangesAsync(ct);
         try
         {
@@ -85,7 +85,7 @@ public sealed class OrderRegistrationSmsService
 
     private static string? ExtractDiscountCode(string message)
     {
-        const string marker = "token2=";
+        const string marker = "token3=";
         var index = message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
         return index < 0 ? null : message[(index + marker.Length)..].Trim();
     }
