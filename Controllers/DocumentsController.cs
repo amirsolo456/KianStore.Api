@@ -20,15 +20,13 @@ public sealed class DocumentsController : ControllerBase
     private readonly IDocumentService _documentService;
     private readonly IDocumentMutationService _mutationService;
     private readonly ISanadAuditService _auditService;
-    private readonly SaleDocumentMutationService _saleMutationService;
 
-    public DocumentsController(KianStoreDbContext context, IDocumentService documentService, IDocumentMutationService mutationService, ISanadAuditService auditService, SaleDocumentMutationService saleMutationService)
+    public DocumentsController(KianStoreDbContext context, IDocumentService documentService, IDocumentMutationService mutationService, ISanadAuditService auditService)
     {
         _context = context;
         _documentService = documentService;
         _mutationService = mutationService;
         _auditService = auditService;
-        _saleMutationService = saleMutationService;
     }
 
     [HttpPost]
@@ -126,14 +124,6 @@ public sealed class DocumentsController : ControllerBase
             return Ok(result);
         }
     }
-
-    [HttpPut("sale/{idSal:int}/{id}")]
-    public async Task<IActionResult> UpdateSale(int idSal, string id, [FromBody] UpdateSaleDocumentRequest request, CancellationToken cancellationToken)
-        => Ok(await _saleMutationService.UpdateAsync(idSal, id, request, GetCurrentUserId(null), cancellationToken));
-
-    [HttpDelete("sale/{idSal:int}/{id}")]
-    public async Task<IActionResult> DeleteSale(int idSal, string id, CancellationToken cancellationToken)
-        => Ok(await _saleMutationService.DeleteAsync(idSal, id, GetCurrentUserId(null), cancellationToken));
 
     [HttpGet("history")]
     public async Task<IActionResult> History([FromQuery] int idSal, [FromQuery] int sanadType, [FromQuery] int page = 1, [FromQuery] int pageSize = 30, CancellationToken cancellationToken = default)
