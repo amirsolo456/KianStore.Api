@@ -15,6 +15,7 @@ public sealed class DocumentResponse
     public bool IsFinal { get; init; }
     public string? Description { get; init; }
     public string? TarafName { get; init; }
+    public string? SmsStatus { get; init; }
     public string[] ConsumedDiscountCodes { get; init; } = Array.Empty<string>();
     public string? IssuedNextPurchaseDiscountCode { get; init; }
     public bool NextPurchaseSmsSent { get; init; }
