@@ -9,12 +9,10 @@ public sealed class OrderRegistrationSmsServiceV2
 {
     private const string TemplateName = "templatemobile";
     private readonly KianStoreDbContext _context;
-    private readonly DiscountCodeService _discountCodeService;
 
-    public OrderRegistrationSmsServiceV2(KianStoreDbContext context, DiscountCodeService discountCodeService)
+    public OrderRegistrationSmsServiceV2(KianStoreDbContext context)
     {
         _context = context;
-        _discountCodeService = discountCodeService;
     }
 
     public async Task<object> SaveResultAsync(OrderRegistrationSmsResultRequest request, CancellationToken ct = default)
