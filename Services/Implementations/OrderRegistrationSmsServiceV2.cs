@@ -92,17 +92,22 @@ public sealed class OrderRegistrationSmsServiceV2
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var rows = await _context.Sanads
+        var sanadsQuery = _context.Sanads
             .AsNoTracking()
-            .Where(x =>
-                x.IdSal == idSal &&
-                x.SanadType == sanadType &&
-                !x.Disable)
-            .OrderByDescending(x => x.IdFaktor)
+            .Where(x => x.SanadType == sanadType && !x.Disable);
+
+        if (idSal > 0)
+            sanadsQuery = sanadsQuery.Where(x => x.IdSal == idSal);
+
+        var rows = await sanadsQuery
+            .OrderByDescending(x => x.IdSal)
+            .ThenByDescending(x => x.IdFaktor)
+            .ThenByDescending(x => x.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new
             {
+                idSal = x.IdSal,
                 idSanad = x.Id,
                 factorNumber = x.IdFaktor,
                 smsStatus = x.SmsStatus
@@ -111,6 +116,7 @@ public sealed class OrderRegistrationSmsServiceV2
 
         return rows.Select(x => (object)new
         {
+            x.idSal,
             x.idSanad,
             x.factorNumber,
             smsSent = x.smsStatus == SuccessStatus,
