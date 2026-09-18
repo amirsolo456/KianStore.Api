@@ -10,14 +10,10 @@ namespace KianStore.Api.Services.Implementations;
 public sealed class SmsService
 {
     private readonly KianStoreDbContext _context;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _configuration;
 
-    public SmsService(KianStoreDbContext context, IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public SmsService(KianStoreDbContext context)
     {
         _context = context;
-        _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
     }
 
     public async Task<object> SendAsync(SendSmsRequest request, CancellationToken ct = default)
@@ -146,134 +142,13 @@ public sealed class SmsService
         await _context.SaveChangesAsync(ct);
     }
 
-    private async Task<(string Provider, string? ProviderMessageId)> SendToProviderAsync(
-        string mobile,
-        string message,
-        CancellationToken ct)
-    {
-        const string providerName = "Kavenegar";
-        var provider = (_configuration["Sms:Provider"] ?? providerName).Trim();
-        var apiKey = _configuration["Sms:ApiKey"]?.Trim();
-        var sender = _configuration["Sms:Sender"]?.Trim();
-        var configuredUrl = _configuration["Sms:SendUrl"]?.Trim();
-
-        if (provider.Equals(providerName, StringComparison.OrdinalIgnoreCase))
-        {
-            if (string.IsNullOrWhiteSpace(apiKey))
-                throw new InvalidOperationException("کلید API کاوه‌نگار تنظیم نشده است. مقدار Sms:ApiKey را در Environment یا تنظیمات سرور قرار دهید.");
-
-            var url = !string.IsNullOrWhiteSpace(configuredUrl)
-                ? configuredUrl
-                : $"https://api.kavenegar.com/v1/{Uri.EscapeDataString(apiKey)}/sms/send.json";
-
-            var values = new Dictionary<string, string>
-            {
-                ["receptor"] = mobile,
-                ["message"] = message
-            };
-
-            // sender در کاوه‌نگار می‌تواند از پنل پیش‌فرض استفاده کند؛ فقط در صورت تنظیم ارسال می‌شود.
-            if (!string.IsNullOrWhiteSpace(sender))
-                values["sender"] = sender;
-
-            var client = _httpClientFactory.CreateClient("SmsProvider");
-            using var request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new FormUrlEncodedContent(values)
-            };
-
-            using var response = await client.SendAsync(request, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-
-            if (response.StatusCode != HttpStatusCode.OK)
-                throw new InvalidOperationException($"خطای ارتباط با کاوه‌نگار ({(int)response.StatusCode}): {body}");
-
-            try
-            {
-                using var json = JsonDocument.Parse(body);
-                var root = json.RootElement;
-
-                if (!root.TryGetProperty("return", out var returnNode))
-                    throw new InvalidOperationException($"پاسخ نامعتبر از کاوه‌نگار: {body}");
-
-                var apiStatus = returnNode.TryGetProperty("status", out var statusNode)
-                    ? statusNode.GetInt32()
-                    : 0;
-                var apiMessage = returnNode.TryGetProperty("message", out var messageNode)
-                    ? messageNode.GetString()
-                    : "خطای نامشخص کاوه‌نگار";
-
-                if (apiStatus != 200)
-                    throw new InvalidOperationException($"کاوه‌نگار: {apiMessage} (کد {apiStatus})");
-
-                string? messageId = null;
-                if (root.TryGetProperty("entries", out var entries))
-                {
-                    if (entries.ValueKind == JsonValueKind.Array && entries.GetArrayLength() > 0)
-                    {
-                        var first = entries[0];
-                        if (first.TryGetProperty("messageid", out var idNode))
-                            messageId = idNode.ToString();
-                    }
-                    else if (entries.ValueKind == JsonValueKind.Object && entries.TryGetProperty("messageid", out var idNode))
-                    {
-                        messageId = idNode.ToString();
-                    }
-                }
-
-                return (providerName, messageId);
-            }
-            catch (JsonException ex)
-            {
-                throw new InvalidOperationException($"پاسخ JSON کاوه‌نگار قابل پردازش نیست: {ex.Message}");
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("ApiKey برای سرویس پیامک تنظیم نشده است.");
-        if (string.IsNullOrWhiteSpace(configuredUrl))
-            throw new InvalidOperationException("SendUrl برای سرویس پیامک تنظیم نشده است.");
-
-        var genericClient = _httpClientFactory.CreateClient("SmsProvider");
-        using var genericRequest = new HttpRequestMessage(HttpMethod.Post, configuredUrl);
-        genericRequest.Headers.TryAddWithoutValidation("X-Api-Key", apiKey);
-        genericRequest.Content = System.Net.Http.Json.JsonContent.Create(new
-        {
-            mobile,
-            message,
-            sender
-        });
-
-        using var genericResponse = await genericClient.SendAsync(genericRequest, ct);
-        var genericBody = await genericResponse.Content.ReadAsStringAsync(ct);
-        if (!genericResponse.IsSuccessStatusCode)
-            throw new InvalidOperationException($"پاسخ پنل پیامک ناموفق بود: {(int)genericResponse.StatusCode} {genericBody}");
-
-        string? providerMessageId = null;
-        try
-        {
-            using var json = JsonDocument.Parse(genericBody);
-            providerMessageId = json.RootElement.TryGetProperty("messageId", out var p)
-                ? p.GetString()
-                : json.RootElement.TryGetProperty("id", out var id) ? id.ToString() : null;
-        }
-        catch (JsonException)
-        {
-            // Some providers return plain text on success.
-        }
-
-        return (provider, providerMessageId);
-    }
-
     private static string NormalizeMobile(string? mobile)
     {
         var digits = new string((mobile ?? string.Empty).Where(char.IsDigit).ToArray());
-
         if (digits.StartsWith("0098"))
             digits = "0" + digits[4..];
         else if (digits.StartsWith("98") && digits.Length == 12)
             digits = "0" + digits[2..];
-
         return digits;
     }
 
