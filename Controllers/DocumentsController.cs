@@ -200,18 +200,33 @@ public sealed class DocumentsController : ControllerBase
         if (string.IsNullOrWhiteSpace(mobile))
             return;
 
-        // Kavenegar Pattern tokens must not contain spaces; use fixed text for the greeting.
+        // The existing Kavenegar pattern "templatemobile" uses:
+        // %token  = invoice/factor number
+        // %token3 = next-purchase gift code
         var factorToken = document.IdFaktor.ToString(CultureInfo.InvariantCulture);
-        var amountToken = decimal.Truncate(document.TotalAmount)
-            .ToString("0", CultureInfo.InvariantCulture);
+
+        var discountCode = await _context.SmsLogs
+            .AsNoTracking()
+            .Where(x =>
+                x.IdSal == document.IdSal &&
+                x.IdSanad == document.Id &&
+                x.Message.StartsWith("templatemobile:", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Id)
+            .Select(x => x.Message)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var token3 = ExtractTemplateToken(discountCode, "token3");
+
+        if (string.IsNullOrWhiteSpace(token3))
+            return;
 
         try
         {
             await _smsService.SendTemplateAsync(
                 mobile: mobile,
-                templateName: "sanadregistered",
+                templateName: "templatemobile",
                 token: factorToken,
-                token2: amountToken,
+                token3: token3,
                 personId: document.IdTaraf,
                 idSal: document.IdSal,
                 idSanad: document.Id,
@@ -221,6 +236,21 @@ public sealed class DocumentsController : ControllerBase
         {
             // SMS failure must not make a successfully registered document fail.
         }
+    }
+
+    private static string? ExtractTemplateToken(string? message, string tokenName)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return null;
+
+        var marker = tokenName + "=";
+        var start = message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+            return null;
+
+        start += marker.Length;
+        var end = message.IndexOf(';', start);
+        return (end < 0 ? message[start..] : message[start..end]).Trim();
     }
 
     private int? GetCurrentUserId(int? fallback)
