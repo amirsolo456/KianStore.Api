@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KianStore.Api.Services.Implementations;
 
+// Mobile sale edit/delete service; included explicitly in the API deployment build.
 public sealed class SaleDocumentMutationService
 {
     private const int SaleType = 12;
