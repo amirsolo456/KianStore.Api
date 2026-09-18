@@ -37,3 +37,11 @@ public sealed class OrderRegistrationSmsResultRequest
     public string? ProviderStatusText { get; init; }
     public string? ErrorMessage { get; init; }
 }
+
+
+public sealed class DocumentSmsStatusRequest
+{
+    public int IdSal { get; init; }
+    public string IdSanad { get; init; } = null!;
+    public bool SmsSent { get; init; }
+}
