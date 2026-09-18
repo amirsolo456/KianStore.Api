@@ -22,7 +22,7 @@ public sealed class UpdateSmsTemplateRequest
     public bool IsActive { get; init; } = true;
 }
 
-public sealed class OrderRegistrationSmsRequest
+public sealed class OrderRegistrationSmsResultRequest
 {
     public int IdSal { get; init; }
     public string IdSanad { get; init; } = null!;
@@ -30,4 +30,10 @@ public sealed class OrderRegistrationSmsRequest
     public string Mobile { get; init; } = null!;
     public int FactorNumber { get; init; }
     public string? DiscountCode { get; init; }
+    public bool SmsSent { get; init; }
+    public string? Provider { get; init; }
+    public string? ProviderMessageId { get; init; }
+    public int? ProviderStatus { get; init; }
+    public string? ProviderStatusText { get; init; }
+    public string? ErrorMessage { get; init; }
 }
