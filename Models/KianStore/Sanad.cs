@@ -40,6 +40,7 @@ public class Sanad
     public int KarmozdFrosh { get; set; }
     public string? TarafName2 { get; set; }
     public string? Sharh { get; set; }
+    public string? SmsStatus { get; set; }
     public decimal Takhfif2 { get; set; }
     public bool IsTasvieh { get; set; }
     public int TasviehID { get; set; }
