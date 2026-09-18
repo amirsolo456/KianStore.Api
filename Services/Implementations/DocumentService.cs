@@ -177,11 +177,15 @@ public sealed class DocumentService : IDocumentService
     private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details, string? tarafName = null)
     {
         var isPurchase = sanad.SanadType == 11;
+        // Keep the persisted document SMS state stable for the history API contract.
+        var smsStatus = string.IsNullOrWhiteSpace(sanad.SmsStatus)
+            ? null
+            : sanad.SmsStatus.Trim().ToLowerInvariant();
         return new DocumentResponse
         {
             IdSal = sanad.IdSal, Id = sanad.Id, SanadType = sanad.SanadType, IdAnbar = sanad.IdAnbar, IdTaraf = sanad.IdTaraf,
             IdTarafType = sanad.IdTarafType, IdFaktor = sanad.IdFaktor, SabtDate = sanad.SabtDate, TotalAmount = sanad.MabKol,
-            IsFinal = sanad.IsFinal, Description = sanad.Des, TarafName = tarafName, SmsStatus = sanad.SmsStatus,
+            IsFinal = sanad.IsFinal, Description = sanad.Des, TarafName = tarafName, SmsStatus = smsStatus,
             Items = details.Select(x => new DocumentItemResponse
             {
                 Id2 = x.Id2,
