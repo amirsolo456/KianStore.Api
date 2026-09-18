@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text.Json;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Sms;
 using KianStore.Api.Models.KianStore;
@@ -11,66 +9,139 @@ public sealed class OrderRegistrationSmsServiceV2
 {
     private const string TemplateName = "templatemobile";
     private readonly KianStoreDbContext _context;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _configuration;
+    private const string TemplateName = "templatemobile";
     private readonly DiscountCodeService _discountCodeService;
 
-    public OrderRegistrationSmsServiceV2(KianStoreDbContext context, IHttpClientFactory httpClientFactory, IConfiguration configuration, DiscountCodeService discountCodeService)
+    public OrderRegistrationSmsServiceV2(KianStoreDbContext context, DiscountCodeService discountCodeService)
     {
-        _context = context; _httpClientFactory = httpClientFactory; _configuration = configuration; _discountCodeService = discountCodeService;
+        _context = context;
+        _discountCodeService = discountCodeService;
     }
 
-    public async Task<object> SendAsync(OrderRegistrationSmsRequest request, CancellationToken ct = default)
+    public async Task<object> SaveResultAsync(OrderRegistrationSmsResultRequest request, CancellationToken ct = default)
     {
+        if (request.IdSal <= 0 || string.IsNullOrWhiteSpace(request.IdSanad) || request.PersonId <= 0 || request.FactorNumber <= 0)
+            throw new ArgumentException("اطلاعات سند برای ثبت نتیجه پیامک کامل نیست.");
+
+        var sanad = await _context.Sanads
+            .FirstOrDefaultAsync(x => x.IdSal == request.IdSal && x.Id == request.IdSanad, ct);
+
+        if (sanad == null)
+            throw new KeyNotFoundException("سند مورد نظر یافت نشد.");
+
+        if (sanad.IdTaraf != request.PersonId)
+            throw new InvalidOperationException("خریدار سند با خریدار نتیجه پیامک مطابقت ندارد.");
+
         var mobile = NormalizeMobile(request.Mobile);
-        if (!IsValidMobile(mobile)) throw new ArgumentException("شماره موبایل معتبر نیست.");
-        if (request.IdSal <= 0 || string.IsNullOrWhiteSpace(request.IdSanad) || request.PersonId <= 0 || request.FactorNumber <= 0) throw new ArgumentException("اطلاعات سند برای ارسال پیامک کامل نیست.");
-        var documentExists = await _context.Sanads.AsNoTracking().AnyAsync(x => x.IdSal == request.IdSal && x.Id == request.IdSanad && x.IdTaraf == request.PersonId && !x.Disable, ct);
-        if (!documentExists) throw new KeyNotFoundException("سند مورد نظر یافت نشد.");
-        var discount = string.IsNullOrWhiteSpace(request.DiscountCode)
-            ? await _context.DiscountCodes.AsNoTracking().Where(x => x.PersonId == request.PersonId && x.IssuedForIdSal == request.IdSal && x.IssuedForIdSanad == request.IdSanad && x.IsActive).OrderByDescending(x => x.Id).Select(x => x.Code).FirstOrDefaultAsync(ct)
-            : request.DiscountCode!.Trim();
-        if (string.IsNullOrWhiteSpace(discount))
+        if (!IsValidMobile(mobile))
+            throw new ArgumentException("شماره موبایل معتبر نیست.");
+
+        var templateId = await _context.SmsTemplates
+            .AsNoTracking()
+            .Where(x => x.Name == TemplateName && x.IsActive)
+            .Select(x => (int?)x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        var discount = string.IsNullOrWhiteSpace(request.DiscountCode) ? null : request.DiscountCode.Trim();
+        var message = $"{TemplateName}: token={request.FactorNumber}; token3={discount ?? string.Empty}";
+
+        var log = await _context.SmsLogs
+            .FirstOrDefaultAsync(x =>
+                x.IdSal == request.IdSal &&
+                x.IdSanad == request.IdSanad &&
+                x.Message.StartsWith(TemplateName + ":"), ct);
+
+        if (log == null)
         {
-            var percent = _configuration.GetValue<decimal?>("DiscountCode:NextPurchasePercentage") ?? 10m;
-            var days = _configuration.GetValue<int?>("DiscountCode:NextPurchaseValidDays") ?? 30;
-            var issued = await _discountCodeService.IssueNextPurchaseAsync(new DTOs.DiscountCodes.IssueNextPurchaseDiscountRequest { PersonId = request.PersonId, Type = 1, Value = percent, ValidDays = days, PerCustomerLimit = 1, Title = "تخفیف خرید بعدی" }, request.IdSal, request.IdSanad, ct);
-            discount = JsonSerializer.SerializeToElement(issued).GetProperty("Code").GetString();
+            log = new SmsLog
+            {
+                PersonId = request.PersonId,
+                IdSal = request.IdSal,
+                IdSanad = request.IdSanad,
+                Mobile = mobile,
+                Message = message,
+                TemplateId = templateId,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.SmsLogs.Add(log);
         }
-        if (string.IsNullOrWhiteSpace(discount)) throw new InvalidOperationException("کد تخفیف خرید بعدی قابل تولید نبود.");
-        var templateId = await _context.SmsTemplates.AsNoTracking().Where(x => x.Name == TemplateName && x.IsActive).Select(x => (int?)x.Id).FirstOrDefaultAsync(ct);
-        var log = new SmsLog { PersonId = request.PersonId, IdSal = request.IdSal, IdSanad = request.IdSanad, Mobile = mobile, Message = $"{TemplateName}: token={request.FactorNumber}; token3={discount}", TemplateId = templateId, Status = 1, Provider = "Kavenegar", CreatedAt = DateTime.UtcNow };
-        _context.SmsLogs.Add(log); await _context.SaveChangesAsync(ct);
-        try
+
+        log.PersonId = request.PersonId;
+        log.IdSal = request.IdSal;
+        log.IdSanad = request.IdSanad;
+        log.Mobile = mobile;
+        log.Message = message;
+        log.TemplateId = templateId;
+        log.Status = request.SmsSent ? 2 : 3;
+        log.Provider = string.IsNullOrWhiteSpace(request.Provider) ? "Kavenegar" : request.Provider.Trim();
+        log.ProviderMessageId = string.IsNullOrWhiteSpace(request.ProviderMessageId) ? null : request.ProviderMessageId.Trim();
+        log.ProviderStatus = request.ProviderStatus;
+        log.ProviderStatusText = string.IsNullOrWhiteSpace(request.ProviderStatusText) ? null : request.ProviderStatusText.Trim();
+        log.ErrorMessage = request.SmsSent
+            ? null
+            : (string.IsNullOrWhiteSpace(request.ErrorMessage) ? "ارسال پیامک ناموفق بود." : request.ErrorMessage.Trim());
+        log.LastStatusCheckedAt = DateTime.UtcNow;
+
+        sanad.Sharh = MergeSmsStatusIntoSharh(
+            sanad.Sharh,
+            request.SmsSent,
+            request.ProviderMessageId,
+            request.ProviderStatus,
+            request.ProviderStatusText,
+            request.ErrorMessage);
+
+        await _context.SaveChangesAsync(ct);
+
+        return new
         {
-            var result = await SendLookupAsync(mobile, request.FactorNumber.ToString(), discount, ct);
-            log.Status = 2; log.ProviderMessageId = result.MessageId; log.ProviderStatus = result.Status; log.ProviderStatusText = result.StatusText; log.LastStatusCheckedAt = DateTime.UtcNow; log.ErrorMessage = null; await _context.SaveChangesAsync(ct);
-            return new { success = true, smsSent = true, status = "sent", statusText = result.StatusText ?? "پیامک با موفقیت توسط کاوه‌نگار پذیرفته شد.", providerMessageId = result.MessageId, providerStatus = result.Status, discountCode = discount, factorNumber = request.FactorNumber, template = TemplateName };
-        }
-        catch (Exception ex)
-        {
-            log.Status = 3; log.ErrorMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message; await _context.SaveChangesAsync(ct);
-            return new { success = false, smsSent = false, status = "failed", statusText = log.ErrorMessage, providerMessageId = (string?)null, providerStatus = (int?)null, discountCode = discount, factorNumber = request.FactorNumber, template = TemplateName };
-        }
+            success = true,
+            saved = true,
+            smsSent = request.SmsSent,
+            status = request.SmsSent ? "sent" : "failed",
+            statusText = request.SmsSent
+                ? (request.ProviderStatusText ?? "نتیجه ارسال پیامک ثبت شد.")
+                : (request.ErrorMessage ?? "نتیجه ناموفق پیامک ثبت شد."),
+            providerMessageId = request.ProviderMessageId,
+            providerStatus = request.ProviderStatus,
+            idSal = request.IdSal,
+            idSanad = request.IdSanad
+        };
     }
+
 
     public async Task<object> GetStatusAsync(int idSal, string idSanad, CancellationToken ct = default)
     {
-        var factor = await _context.Sanads.AsNoTracking().Where(x => x.IdSal == idSal && x.Id == idSanad).Select(x => (int?)x.IdFaktor).FirstOrDefaultAsync(ct);
-        var log = await _context.SmsLogs.AsNoTracking().Where(x => x.IdSal == idSal && x.IdSanad == idSanad && x.Message.StartsWith(TemplateName + ":")).OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
-        if (log == null) return new { smsSent = false, status = "not_sent", statusText = "برای این سند پیامک ثبت سفارش ارسال نشده است.", factorNumber = factor };
-        if (log.Status == 2 && !string.IsNullOrWhiteSpace(log.ProviderMessageId))
+        var sanad = await _context.Sanads.AsNoTracking()
+            .Where(x => x.IdSal == idSal && x.Id == idSanad)
+            .Select(x => new { x.Id, x.IdFaktor })
+            .FirstOrDefaultAsync(ct);
+
+        if (sanad == null)
+            return new { smsSent = false, status = "not_found", statusText = "سند یافت نشد." };
+
+        var log = await _context.SmsLogs.AsNoTracking()
+            .Where(x => x.IdSal == idSal && x.IdSanad == idSanad && x.Message.StartsWith(TemplateName + ":"))
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (log == null)
+            return new { smsSent = false, status = "not_sent", statusText = "نتیجه پیامک ثبت نشده است.", factorNumber = sanad.IdFaktor };
+
+        return new
         {
-            try
-            {
-                var provider = await GetProviderStatusAsync(log.ProviderMessageId!, ct);
-                await _context.SmsLogs.Where(x => x.Id == log.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.ProviderStatus, provider.Status).SetProperty(x => x.ProviderStatusText, provider.StatusText).SetProperty(x => x.LastStatusCheckedAt, DateTime.UtcNow), ct);
-                log.ProviderStatus = provider.Status; log.ProviderStatusText = provider.StatusText;
-            }
-            catch { }
-        }
-        return new { smsSent = log.Status == 2, status = log.Status == 2 ? "sent" : log.Status == 3 ? "failed" : "pending", statusText = log.Status == 2 ? (log.ProviderStatusText ?? "ارسال شد") : log.Status == 3 ? (log.ErrorMessage ?? "ارسال ناموفق") : "در حال ارسال", providerMessageId = log.ProviderMessageId, providerStatus = log.ProviderStatus, factorNumber = factor, discountCode = ExtractDiscountCode(log.Message), createdAt = log.CreatedAt };
+            smsSent = log.Status == 2,
+            status = log.Status == 2 ? "sent" : "failed",
+            statusText = log.Status == 2
+                ? (log.ProviderStatusText ?? "ارسال شد")
+                : (log.ErrorMessage ?? "ارسال ناموفق"),
+            providerMessageId = log.ProviderMessageId,
+            providerStatus = log.ProviderStatus,
+            factorNumber = sanad.IdFaktor,
+            discountCode = ExtractDiscountCode(log.Message),
+            createdAt = log.CreatedAt
+        };
     }
+
 
     public async Task<List<object>> GetStatusesAsync(int idSal, int sanadType, int page, int pageSize, CancellationToken ct = default)
     {
@@ -88,54 +159,6 @@ public sealed class OrderRegistrationSmsServiceV2
         const string marker = "token3=";
         var index = message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
         return index < 0 ? null : message[(index + marker.Length)..].Trim();
-    }
-
-    private async Task<(string? MessageId, int? Status, string? StatusText)> SendLookupAsync(string mobile, string token, string token3, CancellationToken ct)
-    {
-        var apiKey = _configuration["Sms:ApiKey"]?.Trim();
-        if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("کلید API کاوه‌نگار تنظیم نشده است.");
-        var url = $"https://api.kavenegar.com/v1/{Uri.EscapeDataString(apiKey)}/verify/lookup.json";
-        var values = new Dictionary<string, string> { ["receptor"] = mobile, ["token"] = token, ["token3"] = token3, ["template"] = TemplateName };
-        var client = _httpClientFactory.CreateClient("SmsProvider");
-        using var response = await client.PostAsync(url, new FormUrlEncodedContent(values), ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
-        if (response.StatusCode != HttpStatusCode.OK) throw new InvalidOperationException($"خطای کاوه‌نگار: {(int)response.StatusCode} {body}");
-        using var json = JsonDocument.Parse(body);
-        var root = json.RootElement;
-        var ret = root.GetProperty("return");
-        var apiStatus = ret.GetProperty("status").GetInt32();
-        var apiMessage = ret.TryGetProperty("message", out var msg) ? msg.GetString() : null;
-        if (apiStatus != 200) throw new InvalidOperationException($"کاوه‌نگار: {apiMessage ?? "خطای نامشخص"} (کد {apiStatus})");
-        return ParseEntry(root, apiMessage);
-    }
-
-    private async Task<(int? Status, string? StatusText)> GetProviderStatusAsync(string messageId, CancellationToken ct)
-    {
-        var apiKey = _configuration["Sms:ApiKey"]?.Trim();
-        if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("کلید API کاوه‌نگار تنظیم نشده است.");
-        var url = $"https://api.kavenegar.com/v1/{Uri.EscapeDataString(apiKey)}/sms/status.json?messageid={Uri.EscapeDataString(messageId)}";
-        var client = _httpClientFactory.CreateClient("SmsProvider");
-        using var response = await client.GetAsync(url, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(body);
-        using var json = JsonDocument.Parse(body);
-        var ret = json.RootElement.GetProperty("return");
-        if (ret.GetProperty("status").GetInt32() != 200) throw new InvalidOperationException(ret.GetProperty("message").GetString() ?? "خطای وضعیت پیامک");
-        var entry = ParseEntry(json.RootElement, null);
-        return (entry.Status, entry.StatusText);
-    }
-
-    private static (string? MessageId, int? Status, string? StatusText) ParseEntry(JsonElement root, string? fallback)
-    {
-        if (!root.TryGetProperty("entries", out var entries)) return (null, null, fallback);
-        JsonElement first;
-        if (entries.ValueKind == JsonValueKind.Array && entries.GetArrayLength() > 0) first = entries[0];
-        else if (entries.ValueKind == JsonValueKind.Object) first = entries;
-        else return (null, null, fallback);
-        var messageId = first.TryGetProperty("messageid", out var id) ? id.ToString() : null;
-        var status = first.TryGetProperty("status", out var st) && st.TryGetInt32(out var i) ? i : (int?)null;
-        var text = first.TryGetProperty("statustext", out var tx) ? tx.GetString() : fallback;
-        return (messageId, status, text);
     }
 
     private static string NormalizeMobile(string mobile)
