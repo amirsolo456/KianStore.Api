@@ -46,8 +46,8 @@ public sealed class SmsController : ControllerBase
         return NoContent();
     }
 
-    [HttpPost("order-registration")]
-    public async Task<IActionResult> SendOrderRegistration([FromBody] OrderRegistrationSmsResultRequest request, CancellationToken ct)
+    [HttpPost("document-status")]
+    public async Task<IActionResult> UpdateDocumentSmsStatus([FromBody] DocumentSmsStatusRequest request, CancellationToken ct)
         => Ok(await _orderRegistrationSmsService.SendAsync(request, ct));
 
     [HttpGet("order-status/{idSal:int}/{idSanad}")]
