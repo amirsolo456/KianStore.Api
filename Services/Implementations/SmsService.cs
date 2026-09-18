@@ -20,6 +20,32 @@ public sealed class SmsService
         _configuration = configuration;
     }
 
+    public async Task<object> UpdateDocumentSmsStatusAsync(
+        DocumentSmsStatusRequest request,
+        CancellationToken ct = default)
+    {
+        if (request.IdSal <= 0 || string.IsNullOrWhiteSpace(request.IdSanad))
+            throw new ArgumentException("شناسه سند برای ثبت وضعیت پیامک معتبر نیست.");
+
+        var sanad = await _context.Sanads.FirstOrDefaultAsync(
+            x => x.IdSal == request.IdSal && x.Id == request.IdSanad,
+            ct);
+
+        if (sanad == null)
+            throw new KeyNotFoundException("سند مورد نظر یافت نشد.");
+
+        sanad.SmsStatus = request.SmsSent ? "success" : "failed";
+        await _context.SaveChangesAsync(ct);
+
+        return new
+        {
+            success = true,
+            idSal = request.IdSal,
+            idSanad = request.IdSanad,
+            smsStatus = sanad.SmsStatus
+        };
+    }
+
     public async Task<object> SendAsync(SendSmsRequest request, CancellationToken ct = default)
     {
         var mobile = NormalizeMobile(request.Mobile);
