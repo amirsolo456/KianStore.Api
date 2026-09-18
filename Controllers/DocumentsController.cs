@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Documents;
+using KianStore.Api.Services.Implementations;
 using KianStore.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -75,15 +76,8 @@ public sealed class DocumentsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteLegacyById(string id, CancellationToken cancellationToken)
     {
-        var sanad = await _context.Sanads
-            .AsNoTracking()
-            .Where(x => x.Id == id && !x.Disable && (x.SanadType == PurchaseType || x.SanadType == PartnerSaleType))
-            .OrderByDescending(x => x.IdSal)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (sanad == null)
-            return NotFound(ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد."));
-
+        var sanad = await _context.Sanads.AsNoTracking().Where(x => x.Id == id && !x.Disable && (x.SanadType == PurchaseType || x.SanadType == PartnerSaleType)).OrderByDescending(x => x.IdSal).FirstOrDefaultAsync(cancellationToken);
+        if (sanad == null) return NotFound(ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد."));
         return sanad.SanadType switch
         {
             PurchaseType => Ok(await _mutationService.DeletePurchaseAsync(sanad.IdSal, sanad.Id, GetCurrentUserId(null), cancellationToken)),
@@ -133,8 +127,6 @@ public sealed class DocumentsController : ControllerBase
         }
     }
 
-    // Single history endpoint for every document type.
-    // Example: GET /api/documents/history?idSal=1405&sanadType=11&page=1&pageSize=30
     [HttpPut("sale/{idSal:int}/{id}")]
     public async Task<IActionResult> UpdateSale(int idSal, string id, [FromBody] UpdateSaleDocumentRequest request, CancellationToken cancellationToken)
         => Ok(await _saleMutationService.UpdateAsync(idSal, id, request, GetCurrentUserId(null), cancellationToken));
@@ -144,12 +136,7 @@ public sealed class DocumentsController : ControllerBase
         => Ok(await _saleMutationService.DeleteAsync(idSal, id, GetCurrentUserId(null), cancellationToken));
 
     [HttpGet("history")]
-    public async Task<IActionResult> History(
-        [FromQuery] int idSal,
-        [FromQuery] int sanadType,
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 30,
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> History([FromQuery] int idSal, [FromQuery] int sanadType, [FromQuery] int page = 1, [FromQuery] int pageSize = 30, CancellationToken cancellationToken = default)
         => Ok(await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, cancellationToken));
 
     [HttpGet("{idSal:int}/{id}")]
@@ -169,16 +156,13 @@ public sealed class DocumentsController : ControllerBase
     {
         if (!result.Success || result.Data == null) return StatusCode(201, result);
         var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, ct);
-        if (!persisted.Success || persisted.Data == null)
-            return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_RESPONSE_LOAD_FAILED", loadError));
+        if (!persisted.Success || persisted.Data == null) return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_RESPONSE_LOAD_FAILED", loadError));
         return StatusCode(201, new ApiResponse<DocumentResponse> { Success = true, Code = result.Code, Message = result.Message, Data = persisted.Data, Errors = result.Errors, Warnings = result.Warnings, TraceId = result.TraceId });
     }
 
     private int? GetCurrentUserId(int? fallback)
     {
-        if (Request.Headers.TryGetValue("X-User-Id", out var raw) &&
-            int.TryParse(raw.FirstOrDefault(), out var userId) && userId > 0)
-            return userId;
+        if (Request.Headers.TryGetValue("X-User-Id", out var raw) && int.TryParse(raw.FirstOrDefault(), out var userId) && userId > 0) return userId;
         return fallback;
     }
 }
