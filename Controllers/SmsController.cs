@@ -40,9 +40,11 @@ public sealed class SmsController : ControllerBase
         return NoContent();
     }
 
-    [HttpPost("order-registration")]
-    public async Task<IActionResult> SendOrderRegistration([FromBody] OrderRegistrationSmsRequest request, CancellationToken ct)
-        => Ok(await _orderRegistrationSmsService.SendAsync(request, ct));
+    [HttpPost("order-registration/result")]
+    public async Task<IActionResult> SaveOrderRegistrationResult(
+        [FromBody] OrderRegistrationSmsResultRequest request,
+        CancellationToken ct)
+        => Ok(await _orderRegistrationSmsService.SaveResultAsync(request, ct));
 
     [HttpGet("order-status/{idSal:int}/{idSanad}")]
     public async Task<IActionResult> OrderStatus(int idSal, string idSanad, CancellationToken ct)
