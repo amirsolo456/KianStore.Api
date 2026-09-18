@@ -91,6 +91,11 @@ BEGIN
     CREATE INDEX IX_SmsTemplate_IsActive ON dbo.SmsTemplate(IsActive);
 END;
 
+IF COL_LENGTH(N'dbo.Sanad', N'SmsStatus') IS NULL
+BEGIN
+    ALTER TABLE dbo.Sanad ADD SmsStatus varchar(20) NULL;
+END;
+
 IF OBJECT_ID(N'dbo.SmsLog', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.SmsLog (Id bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_SmsLog PRIMARY KEY, PersonId int NULL, IdSal int NULL, IdSanad nvarchar(10) NULL, Mobile varchar(70) NOT NULL, Message nvarchar(1000) NOT NULL, TemplateId int NULL, Status int NOT NULL CONSTRAINT DF_SmsLog_Status DEFAULT ((1)), Provider varchar(100) NULL, ProviderMessageId varchar(100) NULL, ProviderStatus int NULL, ProviderStatusText nvarchar(200) NULL, ErrorMessage nvarchar(500) NULL, LastStatusCheckedAt datetime2 NULL, CreatedAt datetime2(0) NOT NULL CONSTRAINT DF_SmsLog_CreatedAt DEFAULT (SYSUTCDATETIME()), CONSTRAINT CK_SmsLog_Status CHECK (Status IN (1,2,3)), CONSTRAINT FK_SmsLog_Template FOREIGN KEY (TemplateId) REFERENCES dbo.SmsTemplate(Id) ON DELETE SET NULL);
