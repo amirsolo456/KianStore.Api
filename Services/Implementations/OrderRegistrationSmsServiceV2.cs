@@ -9,7 +9,6 @@ public sealed class OrderRegistrationSmsServiceV2
 {
     private const string TemplateName = "templatemobile";
     private readonly KianStoreDbContext _context;
-    private const string TemplateName = "templatemobile";
     private readonly DiscountCodeService _discountCodeService;
 
     public OrderRegistrationSmsServiceV2(KianStoreDbContext context, DiscountCodeService discountCodeService)
