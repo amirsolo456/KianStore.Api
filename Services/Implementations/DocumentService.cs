@@ -177,10 +177,13 @@ public sealed class DocumentService : IDocumentService
     private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details, string? tarafName = null)
     {
         var isPurchase = sanad.SanadType == 11;
-        // Keep the persisted document SMS state stable for the history API contract.
-        var smsStatus = string.IsNullOrWhiteSpace(sanad.SmsStatus)
-            ? null
-            : sanad.SmsStatus.Trim().ToLowerInvariant();
+        // Always expose a stable SMS status to the document-history API.
+        var smsStatus = sanad.SmsStatus?.Trim().ToLowerInvariant() switch
+        {
+            OrderRegistrationSmsServiceV2.SuccessStatus => OrderRegistrationSmsServiceV2.SuccessStatus,
+            OrderRegistrationSmsServiceV2.FailedStatus => OrderRegistrationSmsServiceV2.FailedStatus,
+            _ => "not_sent"
+        };
         return new DocumentResponse
         {
             IdSal = sanad.IdSal, Id = sanad.Id, SanadType = sanad.SanadType, IdAnbar = sanad.IdAnbar, IdTaraf = sanad.IdTaraf,
