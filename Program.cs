@@ -110,11 +110,29 @@ END;
 
 IF NOT EXISTS (SELECT 1 FROM dbo.SmsTemplate WHERE Name = N'templatemobile')
 BEGIN
-    INSERT INTO dbo.SmsTemplate (Name, TemplateText, IsActive) VALUES (N'templatemobile', N'دامداری آریا دام خاتون\nسفارش شما با شماره فاکتور : %token\nبا موفقیت ثبت گردید💐🙏🏻\nشماره تماس پشتیبان:\n۰۹۱۹۲۴۱۰۲۰۷\nاین کد رو میتونید در خرید بعدیتون استفاده کنید (کد هدیه) : %token3', 1);
+    INSERT INTO dbo.SmsTemplate (Name, TemplateText, IsActive) VALUES (N'templatemobile', N'دامداری آریا دام خاتون\\nسفارش شما با شماره فاکتور : %token\\nبا موفقیت ثبت گردید💐🙏🏻\\nشماره تماس پشتیبان:\\n۰۹۱۹۲۴۱۰۲۰۷\\nاین کد رو میتونید در خرید بعدیتون استفاده کنید (کد هدیه) : %token3', 1);
 END
 ELSE
 BEGIN
-    UPDATE dbo.SmsTemplate SET TemplateText = N'دامداری آریا دام خاتون\nسفارش شما با شماره فاکتور : %token\nبا موفقیت ثبت گردید💐🙏🏻\nشماره تماس پشتیبان:\n۰۹۱۹۲۴۱۰۲۰۷\nاین کد رو میتونید در خرید بعدیتون استفاده کنید (کد هدیه) : %token3', IsActive = 1, UpdatedAt = SYSUTCDATETIME() WHERE Name = N'templatemobile';
+    UPDATE dbo.SmsTemplate SET TemplateText = N'دامداری آریا دام خاتون\\nسفارش شما با شماره فاکتور : %token\\nبا موفقیت ثبت گردید💐🙏🏻\\nشماره تماس پشتیبان:\\n۰۹۱۹۲۴۱۰۲۰۷\\nاین کد رو میتونید در خرید بعدیتون استفاده کنید (کد هدیه) : %token3', IsActive = 1, UpdatedAt = SYSUTCDATETIME() WHERE Name = N'templatemobile';
+END;
+
+IF NOT EXISTS (SELECT 1 FROM dbo.SmsTemplate WHERE Name = N'sanadregistered')
+BEGIN
+    INSERT INTO dbo.SmsTemplate (Name, TemplateText, IsActive)
+    VALUES (
+        N'sanadregistered',
+        N'آریا دام خاتون\\nخریدار گرامی، فاکتور %token به مبلغ %token2 تومان با موفقیت ثبت شد.\\nپشتیبانی: 09192410207',
+        1
+    );
+END
+ELSE
+BEGIN
+    UPDATE dbo.SmsTemplate
+    SET TemplateText = N'آریا دام خاتون\\nخریدار گرامی، فاکتور %token به مبلغ %token2 تومان با موفقیت ثبت شد.\\nپشتیبانی: 09192410207',
+        IsActive = 1,
+        UpdatedAt = SYSUTCDATETIME()
+    WHERE Name = N'sanadregistered';
 END;
 ";
     db.Database.ExecuteSqlRaw(sql);
