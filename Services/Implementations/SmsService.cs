@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text.Json;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Sms;
 using KianStore.Api.Models.KianStore;
@@ -16,6 +14,8 @@ public sealed class SmsService
         _context = context;
     }
 
+    // Backend never sends SMS. This endpoint is retained only for legacy callers;
+    // client-side delivery result should use /api/sms/order-registration/result.
     public async Task<object> SendAsync(SendSmsRequest request, CancellationToken ct = default)
     {
         var mobile = NormalizeMobile(request.Mobile);
@@ -24,53 +24,30 @@ public sealed class SmsService
         if (string.IsNullOrWhiteSpace(request.Message))
             throw new ArgumentException("متن پیامک خالی است.");
 
-        int? templateId = request.TemplateId;
-        if (templateId.HasValue && !await _context.SmsTemplates.AnyAsync(x => x.Id == templateId && x.IsActive, ct))
-            throw new KeyNotFoundException("قالب پیامک یافت نشد یا غیرفعال است.");
-
         var log = new SmsLog
         {
             PersonId = request.PersonId,
             Mobile = mobile,
             Message = request.Message.Trim(),
-            TemplateId = templateId,
-            Status = 1,
-            CreatedAt = DateTime.UtcNow
+            TemplateId = request.TemplateId,
+            Status = 3,
+            Provider = "Kavenegar",
+            ErrorMessage = "ارسال پیامک فقط از سمت فرانت انجام می‌شود.",
+            CreatedAt = DateTime.UtcNow,
+            LastStatusCheckedAt = DateTime.UtcNow
         };
 
         _context.SmsLogs.Add(log);
         await _context.SaveChangesAsync(ct);
 
-        try
+        return new
         {
-            var result = await SendToProviderAsync(mobile, request.Message.Trim(), ct);
-            log.Status = 2;
-            log.Provider = result.Provider;
-            log.ProviderMessageId = result.ProviderMessageId;
-            log.ErrorMessage = null;
-            await _context.SaveChangesAsync(ct);
-
-            return new
-            {
-                success = true,
-                message = "پیامک با موفقیت ارسال شد.",
-                providerMessageId = result.ProviderMessageId
-            };
-        }
-        catch (Exception ex)
-        {
-            log.Status = 3;
-            log.ErrorMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
-            await _context.SaveChangesAsync(ct);
-
-            return new
-            {
-                success = false,
-                message = log.ErrorMessage,
-                providerMessageId = (string?)null
-            };
-        }
+            success = false,
+            smsSent = false,
+            message = "این endpoint فقط برای سازگاری قدیمی است؛ ارسال مستقیم پیامک از فرانت انجام می‌شود."
+        };
     }
+
 
     public async Task<IReadOnlyList<object>> GetLogsAsync(int? personId = null, CancellationToken ct = default)
     {
