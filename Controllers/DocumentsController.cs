@@ -205,17 +205,16 @@ public sealed class DocumentsController : ControllerBase
         // %token3 = next-purchase gift code
         var factorToken = document.IdFaktor.ToString(CultureInfo.InvariantCulture);
 
-        var discountCode = await _context.SmsLogs
+        var token3 = await _context.DiscountCodes
             .AsNoTracking()
             .Where(x =>
-                x.IdSal == document.IdSal &&
-                x.IdSanad == document.Id &&
-                x.Message.StartsWith("templatemobile:", StringComparison.OrdinalIgnoreCase))
+                x.PersonId == document.IdTaraf &&
+                x.IssuedForIdSal == document.IdSal &&
+                x.IssuedForIdSanad == document.Id &&
+                x.IsActive)
             .OrderByDescending(x => x.Id)
-            .Select(x => x.Message)
+            .Select(x => x.Code)
             .FirstOrDefaultAsync(cancellationToken);
-
-        var token3 = ExtractTemplateToken(discountCode, "token3");
 
         if (string.IsNullOrWhiteSpace(token3))
             return;
@@ -236,21 +235,6 @@ public sealed class DocumentsController : ControllerBase
         {
             // SMS failure must not make a successfully registered document fail.
         }
-    }
-
-    private static string? ExtractTemplateToken(string? message, string tokenName)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-            return null;
-
-        var marker = tokenName + "=";
-        var start = message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-        if (start < 0)
-            return null;
-
-        start += marker.Length;
-        var end = message.IndexOf(';', start);
-        return (end < 0 ? message[start..] : message[start..end]).Trim();
     }
 
     private int? GetCurrentUserId(int? fallback)
