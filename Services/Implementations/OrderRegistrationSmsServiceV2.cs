@@ -22,7 +22,7 @@ public sealed class OrderRegistrationSmsServiceV2
     /// It never calls Kavenegar and never sends an SMS.
     /// </summary>
     public async Task<object> SendAsync(
-        OrderRegistrationSmsResultRequest request,
+        DocumentSmsStatusRequest request,
         CancellationToken ct = default)
     {
         if (request.IdSal <= 0 || string.IsNullOrWhiteSpace(request.IdSanad))
