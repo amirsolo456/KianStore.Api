@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Documents;
+using KianStore.Api.Services.Implementations;
 using KianStore.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -19,13 +21,20 @@ public sealed class DocumentsController : ControllerBase
     private readonly IDocumentService _documentService;
     private readonly IDocumentMutationService _mutationService;
     private readonly ISanadAuditService _auditService;
+    private readonly SmsService _smsService;
 
-    public DocumentsController(KianStoreDbContext context, IDocumentService documentService, IDocumentMutationService mutationService, ISanadAuditService auditService)
+    public DocumentsController(
+        KianStoreDbContext context,
+        IDocumentService documentService,
+        IDocumentMutationService mutationService,
+        ISanadAuditService auditService,
+        SmsService smsService)
     {
         _context = context;
         _documentService = documentService;
         _mutationService = mutationService;
         _auditService = auditService;
+        _smsService = smsService;
     }
 
     [HttpPost]
@@ -36,6 +45,9 @@ public sealed class DocumentsController : ControllerBase
         var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, cancellationToken);
         if (!persisted.Success || persisted.Data == null)
             return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_RESPONSE_LOAD_FAILED", "سند ثبت شد اما اطلاعات نهایی آن از پایگاه داده قابل بازیابی نبود."));
+
+        await TrySendBuyerDocumentRegistrationSmsAsync(persisted.Data, cancellationToken);
+
         return StatusCode(201, new ApiResponse<DocumentResponse> { Success = true, Code = result.Code, Message = result.Message, Data = persisted.Data, Errors = result.Errors, Warnings = result.Warnings, TraceId = result.TraceId });
     }
 
@@ -161,7 +173,54 @@ public sealed class DocumentsController : ControllerBase
         var persisted = await _documentService.GetAsync(result.Data.IdSal, result.Data.Id, ct);
         if (!persisted.Success || persisted.Data == null)
             return StatusCode(500, ApiResponse<DocumentResponse>.ErrorResult("DOCUMENT_RESPONSE_LOAD_FAILED", loadError));
+
+        await TrySendBuyerDocumentRegistrationSmsAsync(persisted.Data, ct);
+
         return StatusCode(201, new ApiResponse<DocumentResponse> { Success = true, Code = result.Code, Message = result.Message, Data = persisted.Data, Errors = result.Errors, Warnings = result.Warnings, TraceId = result.TraceId });
+    }
+
+
+    private async Task TrySendBuyerDocumentRegistrationSmsAsync(
+        DocumentResponse document,
+        CancellationToken cancellationToken)
+    {
+        // Send only for sale documents where the Taraf is the buyer.
+        if (document.SanadType is not (12 or 15 or 113))
+            return;
+
+        var mobile = await _context.Tarafs
+            .AsNoTracking()
+            .Where(x =>
+                x.Id == document.IdTaraf &&
+                x.IdType == document.IdTarafType &&
+                !x.IsDisabled)
+            .Select(x => x.Mobile)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(mobile))
+            return;
+
+        // Kavenegar Pattern tokens must not contain spaces; use fixed text for the greeting.
+        var factorToken = document.IdFaktor.ToString(CultureInfo.InvariantCulture);
+        var amountToken = decimal.Truncate(document.TotalAmount)
+            .ToString("0", CultureInfo.InvariantCulture);
+
+        try
+        {
+            await _smsService.SendTemplateAsync(
+                mobile: mobile,
+                templateName: "sanadregistered",
+                token: factorToken,
+                token2: amountToken,
+                personId: document.IdTaraf,
+                idSal: document.IdSal,
+                idSanad: document.Id,
+                ct: cancellationToken);
+        }
+        catch
+        {
+            // SMS failure must not make a successfully registered document fail.
+        }
     }
 
     private int? GetCurrentUserId(int? fallback)
