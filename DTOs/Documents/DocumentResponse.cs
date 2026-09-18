@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace KianStore.Api.DTOs.Documents;
 
 public sealed class DocumentResponse
@@ -15,7 +17,8 @@ public sealed class DocumentResponse
     public bool IsFinal { get; init; }
     public string? Description { get; init; }
     public string? TarafName { get; init; }
-    public string? SmsStatus { get; init; }
+    [JsonPropertyName("smsStatus")]
+    public string SmsStatus { get; init; } = "not_sent";
     public string[] ConsumedDiscountCodes { get; init; } = Array.Empty<string>();
     public string? IssuedNextPurchaseDiscountCode { get; init; }
     public bool NextPurchaseSmsSent { get; init; }
