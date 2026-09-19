@@ -115,8 +115,6 @@ public sealed class DocumentService : IDocumentService
 
             var totalDiscount = request.Items.Sum(x => Math.Clamp(x.Discount, 0m, (x.UnitPrice ?? 0m) * x.Quantity));
             sanad.Takhfif = totalDiscount;
-            var totalDiscount = request.Items.Sum(x => Math.Clamp(x.Discount, 0m, (x.UnitPrice ?? 0m) * x.Quantity));
-            sanad.Takhfif = totalDiscount;
             sanad.MabKol = total;
             sanad.MabFrosh = total;
             sanad.MabNaghd = 0;
