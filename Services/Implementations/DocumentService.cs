@@ -100,7 +100,7 @@ public sealed class DocumentService : IDocumentService
                     IdSal = request.IdSal, IdSanad = sanadId, Id2 = row++, AtfNum = null, IdKala = product.Id,
                     Bed = item.IsIncoming ? (double)item.Quantity : 0, Bes = item.IsIncoming ? 0 : (double)item.Quantity,
                     BedMab = item.IsIncoming ? unitPrice : 0, BesMab = item.IsIncoming ? 0 : unitPrice, Des = item.Description,
-                    SumMab = lineTotal, SumMabTakh = lineDiscount, IdAnbar = request.IdAnbar, IdKalaType = product.KalaType, BedMabKharid = purchaseUnitPrice,
+                    SumMab = lineTotal, SumMabTakh = lineDiscount, SumTakhfifKala = lineDiscount, IdAnbar = request.IdAnbar, IdKalaType = product.KalaType, BedMabKharid = purchaseUnitPrice,
                     Maliat = 0, Maliat1 = false, Maliat2 = false, TakhfifDarsad = 0, PorsantDarsad = 0, HazKala = 0,
                     HazKalaKharid = 0, IdSanjesh = product.IdSanjesh, IdSanjesh2 = product.IdSanjesh2, BedBesZarib = 1,
                     SanadType = request.SanadType, PropKala = null, PropKala2 = null, Des1 = null, Des2 = null, Des3 = null,
@@ -113,6 +113,8 @@ public sealed class DocumentService : IDocumentService
                 });
             }
 
+            var totalDiscount = request.Items.Sum(x => Math.Clamp(x.Discount, 0m, (x.UnitPrice ?? 0m) * x.Quantity));
+            sanad.Takhfif = totalDiscount;
             var totalDiscount = request.Items.Sum(x => Math.Clamp(x.Discount, 0m, (x.UnitPrice ?? 0m) * x.Quantity));
             sanad.Takhfif = totalDiscount;
             sanad.MabKol = total;
