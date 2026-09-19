@@ -32,6 +32,7 @@ public sealed class CreateDocumentItemRequest
     [Range(typeof(decimal), "0", "79228162514264337593543950335")] public decimal? UnitPrice { get; init; }
     [Range(typeof(decimal), "0", "79228162514264337593543950335")] public decimal? PurchasePrice { get; init; }
     public bool IsIncoming { get; init; }
+    [Range(typeof(decimal), "0", "79228162514264337593543950335")] public decimal Discount { get; init; }
     [StringLength(200)] public string? Description { get; init; }
 }
 
