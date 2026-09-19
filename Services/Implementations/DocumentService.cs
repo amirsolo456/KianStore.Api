@@ -85,6 +85,7 @@ public sealed class DocumentService : IDocumentService
 
             var details = new List<SanadDetail>();
             decimal total = 0;
+            decimal totalDiscount = 0;
             var row = 1;
             foreach (var item in request.Items)
             {
@@ -95,6 +96,7 @@ public sealed class DocumentService : IDocumentService
                 var lineDiscount = Math.Clamp(item.Discount, 0m, grossLineTotal);
                 var lineTotal = grossLineTotal - lineDiscount;
                 total += lineTotal;
+                totalDiscount += lineDiscount;
                 details.Add(new SanadDetail
                 {
                     IdSal = request.IdSal, IdSanad = sanadId, Id2 = row++, AtfNum = null, IdKala = product.Id,
@@ -113,7 +115,6 @@ public sealed class DocumentService : IDocumentService
                 });
             }
 
-            var totalDiscount = request.Items.Sum(x => Math.Clamp(x.Discount, 0m, (x.UnitPrice ?? 0m) * x.Quantity));
             sanad.Takhfif = totalDiscount;
             sanad.MabKol = total;
             sanad.MabFrosh = total;
