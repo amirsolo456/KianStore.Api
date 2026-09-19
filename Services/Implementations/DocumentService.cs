@@ -197,6 +197,7 @@ public sealed class DocumentService : IDocumentService
         {
             IdSal = sanad.IdSal, Id = sanad.Id, SanadType = sanad.SanadType, IdAnbar = sanad.IdAnbar, IdTaraf = sanad.IdTaraf,
             IdTarafType = sanad.IdTarafType, IdFaktor = sanad.IdFaktor, SabtDate = sanad.SabtDate, TotalAmount = sanad.MabKol,
+            DiscountAmount = sanad.Takhfif,
             IsFinal = sanad.IsFinal, Description = sanad.Des, TarafName = tarafName, SmsStatus = smsStatus,
             Items = details.Select(x => new DocumentItemResponse
             {
