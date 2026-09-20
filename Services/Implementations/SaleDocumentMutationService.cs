@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.Documents;
@@ -27,7 +24,6 @@ public sealed class SaleDocumentMutationService
         if (request.Items.Count == 0) throw new ApiException(400, "EMPTY_DOCUMENT", "سند حداقل باید یک قلم داشته باشد.");
         var sanad = await _context.Sanads.FirstOrDefaultAsync(x => x.IdSal == idSal && x.Id == id && x.SanadType == SaleType && !x.Disable, ct);
         if (sanad == null) throw new ApiException(404, "SALE_NOT_FOUND", "سند فروش مورد نظر یافت نشد.");
-        EnsureSameDay(sanad.SabtDate);
 
         var ids = request.Items.Select(x => x.IdKala.Trim()).Where(x => x.Length > 0).Distinct().ToList();
         var products = await _context.Kalas.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
@@ -79,15 +75,6 @@ public sealed class SaleDocumentMutationService
         var sanad = await _context.Sanads.FirstOrDefaultAsync(x => x.IdSal == idSal && x.Id == id && x.SanadType == SaleType && !x.Disable, ct);
         if (sanad == null) throw new ApiException(404, "SALE_NOT_FOUND", "سند فروش مورد نظر یافت نشد.");
 
-        if (!IsSameDay(sanad.SabtDate))
-        {
-            if (userId is null || userId <= 0)
-                throw new ApiException(401, "LOGIN_REQUIRED", "برای حذف سند قدیمی باید وارد نرم‌افزار شده باشید.");
-            if (string.IsNullOrEmpty(password))
-                throw new ApiException(403, "DELETE_PASSWORD_REQUIRED", "برای حذف این سند، لطفاً رمز عبور حساب کاربری خود را وارد کنید.");
-            await VerifyCurrentUserPasswordAsync(userId.Value, password, ct);
-        }
-
         await using var tx = await _context.Database.BeginTransactionAsync(ct);
         try
         {
@@ -119,38 +106,5 @@ public sealed class SaleDocumentMutationService
                 "سند فروش با موفقیت حذف شد.");
         }
         catch { await tx.RollbackAsync(ct); throw; }
-    }
-
-    private async Task VerifyCurrentUserPasswordAsync(int userId, string password, CancellationToken ct)
-    {
-        var storedPassword = await _context.Set<Users>()
-            .AsNoTracking()
-            .Where(x => x.Id == userId)
-            .Select(x => x.Pass)
-            .FirstOrDefaultAsync(ct);
-
-        if (storedPassword == null || !VerifyPassword(password, storedPassword))
-            throw new ApiException(403, "INVALID_DELETE_PASSWORD", "رمز عبور واردشده صحیح نیست.");
-    }
-
-    private static bool VerifyPassword(string password, string storedPassword)
-    {
-        var provided = Encoding.UTF8.GetBytes(password);
-        var stored = Encoding.UTF8.GetBytes(storedPassword);
-        return provided.Length == stored.Length && CryptographicOperations.FixedTimeEquals(provided, stored);
-    }
-
-    private static bool IsSameDay(string? sabtDate)
-    {
-        var now = DateTime.Now;
-        var pc = new PersianCalendar();
-        var today = $"{pc.GetYear(now):0000}/{pc.GetMonth(now):00}/{pc.GetDayOfMonth(now):00}";
-        return string.Equals(sabtDate?.Trim(), today, StringComparison.Ordinal);
-    }
-
-    private static void EnsureSameDay(string? sabtDate)
-    {
-        if (!IsSameDay(sabtDate))
-            throw new ApiException(403, "EDIT_WINDOW_EXPIRED", "مهلت ویرایش این سند گذشته است. فعلاً فقط سند ثبت‌شده در همان روز قابل ویرایش است.");
     }
 }
