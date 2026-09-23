@@ -24,5 +24,6 @@ public class KalaDetail
     public decimal? MabFrosh1 { get; set; }
 
     [Column("lastChanged")]
+    [DatabaseGenerated(DatabaseGeneratedOption.Computed)]
     public byte[]? LastChanged { get; set; }
 }
