@@ -132,6 +132,33 @@ public sealed class StockTransferService
         var sourceStocks = new Dictionary<string, decimal>(StringComparer.Ordinal);
         var destinationStocks = new Dictionary<string, decimal>(StringComparer.Ordinal);
 
+        // Sanad has legacy foreign keys to Taraf, CheckDef and Users even for
+        // inventory-only documents. Resolve valid neutral records instead of
+        // inserting zero values, which violate those foreign keys.
+        var neutralTaraf = await _context.Tarafs.AsNoTracking()
+            .Where(x => x.Id > 0)
+            .OrderBy(x => x.Id)
+            .Select(x => new { x.Id, x.IdType })
+            .FirstOrDefaultAsync(ct);
+
+        var neutralCheckDef = await _context.CheckDefs.AsNoTracking()
+            .Where(x => x.Id > 0)
+            .OrderBy(x => x.Id)
+            .Select(x => new { x.Id, x.Type })
+            .FirstOrDefaultAsync(ct);
+
+        var neutralUserId = await _context.Users.AsNoTracking()
+            .Where(x => x.Id > 0)
+            .OrderBy(x => x.Id)
+            .Select(x => (int?)x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (neutralTaraf == null || neutralCheckDef == null || !neutralUserId.HasValue)
+            throw new ApiException(
+                409,
+                "TRANSFER_REFERENCE_DATA_MISSING",
+                "اطلاعات پایه لازم برای ثبت سند انتقال در دیتابیس موجود نیست.");
+
         foreach (var item in items)
         {
             if (!products.TryGetValue(item.IdKala, out var product) || product.IsDisabled)
@@ -181,13 +208,13 @@ public sealed class StockTransferService
                 Id = sanadId,
                 SanadType = TransferType,
                 IdAnbar = request.SourceAnbarId,
-                IdTaraf = 0,
-                IdTarafType = 0,
+                IdTaraf = neutralTaraf.Id,
+                IdTarafType = neutralTaraf.IdType,
                 IdFaktor = factorId,
                 IdTypeMab = 0,
                 Takhfif = 0, MabDarSad = 0, MabKol = 0, MabNaghd = 0, MabFrosh = 0,
                 SabtDate = request.SabtDate,
-                MabCheck = 0, MabBed = 0, IdMasool = 0,
+                MabCheck = 0, MabBed = 0, IdMasool = neutralUserId.Value,
                 IdTaiid = null, Des = "انتقال موجودی بین انبارها", IDEijad = null, IdDoreh = null,
                 CountGhest = 0, DarsadGhest = 0,
                 Maliat1 = 0, Maliat1Darsad = 0, Maliat1Sel = false,
@@ -198,7 +225,7 @@ public sealed class StockTransferService
                 IDSanadEx = 0, IDSanadEx2 = 0, IDSanadEx3 = 0,
                 ShowInSanad = true, ShowInFaktor = false,
                 TasviehDate = request.SabtDate, IsTasviehDate = false,
-                IDSandogh = 0, IDSandoghType = 0,
+                IDSandogh = neutralCheckDef.Id, IDSandoghType = neutralCheckDef.Type,
                 MabKart = 0, MabFish = 0, IDKart = 0, IDTypeKart = 0,
                 IsFinal = true, IDFroshMabType = 0, SanadTime = DateTime.Now.ToString("HH:mm:ss"),
                 TakhfifKala1 = false, TakhfifKala2 = false, TakhfifKala3 = false,
