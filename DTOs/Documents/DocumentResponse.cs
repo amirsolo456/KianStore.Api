@@ -17,6 +17,8 @@ public sealed class DocumentResponse
     public bool IsFinal { get; init; }
     public string? Description { get; init; }
     public string? TarafName { get; init; }
+    public int? PurchaseEmployeeId { get; init; }
+    public string? PurchaseEmployeeName { get; init; }
     [JsonPropertyName("smsStatus")]
     public string SmsStatus { get; init; } = "not_sent";
     public string[] ConsumedDiscountCodes { get; init; } = Array.Empty<string>();

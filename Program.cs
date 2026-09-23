@@ -72,6 +72,34 @@ BEGIN
     END;
 END;
 
+IF OBJECT_ID(N'dbo.PurchaseEmployees', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.PurchaseEmployees
+    (
+        Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_PurchaseEmployees PRIMARY KEY,
+        Name NVARCHAR(100) NOT NULL,
+        Mobile NVARCHAR(70) NULL,
+        IsActive BIT NOT NULL CONSTRAINT DF_PurchaseEmployees_IsActive DEFAULT ((1))
+    );
+    CREATE INDEX IX_PurchaseEmployees_IsActive_Name ON dbo.PurchaseEmployees(IsActive, Name);
+END;
+
+IF COL_LENGTH(N'dbo.Sanad', N'PurchaseEmployeeId') IS NULL
+BEGIN
+    ALTER TABLE dbo.Sanad ADD PurchaseEmployeeId INT NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_Sanad_PurchaseEmployee'
+      AND parent_object_id = OBJECT_ID(N'dbo.Sanad')
+)
+BEGIN
+    ALTER TABLE dbo.Sanad
+    ADD CONSTRAINT FK_Sanad_PurchaseEmployee
+        FOREIGN KEY (PurchaseEmployeeId) REFERENCES dbo.PurchaseEmployees(Id);
+END;
+
 IF OBJECT_ID(N'dbo.DiscountCode', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.DiscountCode (Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_DiscountCode PRIMARY KEY, Code varchar(50) NOT NULL, Title nvarchar(200) NULL, TakhfifId int NOT NULL, Type int NOT NULL CONSTRAINT DF_DiscountCode_Type DEFAULT ((1)), Scope int NOT NULL CONSTRAINT DF_DiscountCode_Scope DEFAULT ((1)), PersonId int NULL, IssuedForIdSal int NULL, IssuedForIdSanad varchar(10) NULL, Value decimal(18,3) NOT NULL, MaxDiscountAmount decimal(18,3) NULL, StartDate datetime2(0) NOT NULL, EndDate datetime2(0) NULL, UsageLimit int NULL, UsedCount int NOT NULL CONSTRAINT DF_DiscountCode_UsedCount DEFAULT ((0)), PerCustomerLimit int NULL, IsActive bit NOT NULL CONSTRAINT DF_DiscountCode_IsActive DEFAULT ((1)), Description nvarchar(1000) NULL, CreatedAt datetime2(0) NOT NULL CONSTRAINT DF_DiscountCode_CreatedAt DEFAULT (SYSUTCDATETIME()), CONSTRAINT UQ_DiscountCode_Code UNIQUE (Code), CONSTRAINT FK_DiscountCode_Takhfif FOREIGN KEY (TakhfifId) REFERENCES dbo.Takhfif(ID));

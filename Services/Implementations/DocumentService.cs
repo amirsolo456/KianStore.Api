@@ -29,6 +29,14 @@ public sealed class DocumentService : IDocumentService
         var tarafExists = await _context.Tarafs.AsNoTracking().AnyAsync(x => x.Id == request.IdTaraf && x.IdType == request.IdTarafType && !x.IsDisabled, cancellationToken);
         if (!tarafExists) throw new ApiException(404, "CUSTOMER_NOT_FOUND", "طرف حساب مورد نظر یافت نشد.");
 
+        if (request.SanadType == 11 && request.PurchaseEmployeeId.HasValue)
+        {
+            var employeeExists = await _context.PurchaseEmployees.AsNoTracking().AnyAsync(
+                x => x.Id == request.PurchaseEmployeeId.Value && x.IsActive,
+                cancellationToken);
+            if (!employeeExists) throw new ApiException(404, "PURCHASE_EMPLOYEE_NOT_FOUND", "کارمند خریدار مورد نظر یافت نشد یا غیرفعال است.");
+        }
+
         if (!request.IsPending)
         {
             var cashboxExists = await _context.CheckDefs.AsNoTracking().AnyAsync(x => x.Id == request.IdSandogh && x.Type == request.IdSandoghType, cancellationToken);
@@ -60,7 +68,7 @@ public sealed class DocumentService : IDocumentService
                 IdSal = request.IdSal, Id = sanadId, SanadType = request.SanadType, IdAnbar = request.IdAnbar,
                 IdTaraf = request.IdTaraf, IdTarafType = request.IdTarafType, IdFaktor = factorId, IdTypeMab = 0,
                 Takhfif = 0, MabDarSad = 0, MabKol = 0, MabNaghd = 0, MabFrosh = 0, SabtDate = request.SabtDate,
-                MabCheck = 0, MabBed = 0, IdMasool = request.IdMasool, IdTaiid = null, Des = request.Des,
+                MabCheck = 0, MabBed = 0, IdMasool = request.IdMasool, PurchaseEmployeeId = request.PurchaseEmployeeId, IdTaiid = null, Des = request.Des,
                 IDEijad = null, IdDoreh = null, CountGhest = 0, DarsadGhest = 0, Maliat1 = 0, Maliat1Darsad = 0,
                 Maliat1Sel = false, Maliat2 = 0, Maliat2Darsad = 0, Maliat2Sel = false, MabHarGhest = 0,
                 MabKolAghsat = 0, GhestSel = false, KarmozdFrosh = 0, TarafName2 = null, Sharh = request.Sharh,
@@ -134,7 +142,10 @@ public sealed class DocumentService : IDocumentService
         if (sanad == null) throw new ApiException(404, "DOCUMENT_NOT_FOUND", "سند مورد نظر یافت نشد.");
         var details = await _context.SanadDetails.AsNoTracking().Where(x => x.IdSal == idSal && x.IdSanad == id).OrderBy(x => x.Id2).ToListAsync(cancellationToken);
         var tarafName = await _context.Tarafs.AsNoTracking().Where(x => x.Id == sanad.IdTaraf && x.IdType == sanad.IdTarafType).Select(x => x.Name).FirstOrDefaultAsync(cancellationToken);
-        return ApiResponse<DocumentResponse>.SuccessResult(Map(sanad, details, tarafName));
+        var purchaseEmployeeName = sanad.PurchaseEmployeeId.HasValue
+            ? await _context.PurchaseEmployees.AsNoTracking().Where(x => x.Id == sanad.PurchaseEmployeeId.Value).Select(x => x.Name).FirstOrDefaultAsync(cancellationToken)
+            : null;
+        return ApiResponse<DocumentResponse>.SuccessResult(Map(sanad, details, tarafName, purchaseEmployeeName));
     }
 
     public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(int idSal, int sanadType = 12, int page = 1, int pageSize = 30, CancellationToken cancellationToken = default)
@@ -150,8 +161,12 @@ public sealed class DocumentService : IDocumentService
         var details = await _context.SanadDetails.AsNoTracking().Where(x => sanadIds.Contains(x.IdSanad) && salIds.Contains(x.IdSal)).OrderBy(x => x.IdSal).ThenBy(x => x.IdSanad).ThenBy(x => x.Id2).ToListAsync(cancellationToken);
         var tarafIds = sanads.Select(x => x.IdTaraf).Distinct().ToList();
         var tarafs = await _context.Tarafs.AsNoTracking().Where(x => tarafIds.Contains(x.Id)).ToListAsync(cancellationToken);
+        var purchaseEmployeeIds = sanads.Where(x => x.PurchaseEmployeeId.HasValue).Select(x => x.PurchaseEmployeeId!.Value).Distinct().ToList();
+        var purchaseEmployees = purchaseEmployeeIds.Count == 0
+            ? new List<PurchaseEmployee>()
+            : await _context.PurchaseEmployees.AsNoTracking().Where(x => purchaseEmployeeIds.Contains(x.Id)).ToListAsync(cancellationToken);
         var detailLookup = details.ToLookup(x => x.IdSal + "|" + x.IdSanad);
-        var result = sanads.Select(s => Map(s, detailLookup[s.IdSal + "|" + s.Id].ToList(), tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name)).ToList();
+        var result = sanads.Select(s => Map(s, detailLookup[s.IdSal + "|" + s.Id].ToList(), tarafs.FirstOrDefault(t => t.Id == s.IdTaraf && t.IdType == s.IdTarafType)?.Name, purchaseEmployees.FirstOrDefault(x => x.Id == s.PurchaseEmployeeId)?.Name)).ToList();
         return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(result, "تاریخچه فروش با موفقیت دریافت شد.");
     }
 
@@ -182,7 +197,7 @@ public sealed class DocumentService : IDocumentService
         finally { if (shouldClose) await connection.CloseAsync(); }
     }
 
-    private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details, string? tarafName = null)
+    private static DocumentResponse Map(Sanad sanad, IReadOnlyCollection<SanadDetail> details, string? tarafName = null, string? purchaseEmployeeName = null)
     {
         var isPurchase = sanad.SanadType == 11;
         // Always expose a stable SMS status to the document-history API.
@@ -197,7 +212,7 @@ public sealed class DocumentService : IDocumentService
             IdSal = sanad.IdSal, Id = sanad.Id, SanadType = sanad.SanadType, IdAnbar = sanad.IdAnbar, IdTaraf = sanad.IdTaraf,
             IdTarafType = sanad.IdTarafType, IdFaktor = sanad.IdFaktor, SabtDate = sanad.SabtDate, TotalAmount = sanad.MabKol,
             DiscountAmount = sanad.Takhfif,
-            IsFinal = sanad.IsFinal, Description = sanad.Des, TarafName = tarafName, SmsStatus = smsStatus,
+            IsFinal = sanad.IsFinal, Description = sanad.Des, TarafName = tarafName, PurchaseEmployeeId = sanad.PurchaseEmployeeId, PurchaseEmployeeName = purchaseEmployeeName, SmsStatus = smsStatus,
             Items = details.Select(x => new DocumentItemResponse
             {
                 Id2 = x.Id2,

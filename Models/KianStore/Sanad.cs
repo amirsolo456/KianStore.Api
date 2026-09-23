@@ -22,6 +22,7 @@ public class Sanad
     public decimal MabCheck { get; set; }
     public decimal MabBed { get; set; }
     public int IdMasool { get; set; }
+    public int? PurchaseEmployeeId { get; set; }
     public int? IdTaiid { get; set; }
     public string? Des { get; set; }
     public int? IDEijad { get; set; }
