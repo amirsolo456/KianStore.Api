@@ -23,8 +23,7 @@ public sealed class UsersController : ControllerBase
             .Select(x => new PurchaseUserResponse
             {
                 Id = x.Id,
-                Name = x.UserFLName,
-                Post = x.Post
+                Name = x.UserFLName
             })
             .ToListAsync(ct);
 
@@ -38,5 +37,4 @@ public sealed class PurchaseUserResponse
 {
     public int Id { get; init; }
     public string Name { get; init; } = string.Empty;
-    public string Post { get; init; } = string.Empty;
 }
