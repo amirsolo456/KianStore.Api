@@ -133,20 +133,12 @@ public sealed class StockTransferService
         var sourceStocks = new Dictionary<string, decimal>(StringComparer.Ordinal);
         var destinationStocks = new Dictionary<string, decimal>(StringComparer.Ordinal);
 
-        // Sanad has legacy foreign keys to Taraf, CheckDef and Users even for
-        // inventory-only documents. Resolve valid neutral records instead of
-        // inserting zero values, which violate those foreign keys.
-        var neutralTaraf = await _context.Tarafs.AsNoTracking()
-            .Where(x => x.Id > 0)
-            .OrderBy(x => x.Id)
-            .Select(x => new { x.Id, x.IdType })
-            .FirstOrDefaultAsync(ct);
-
-        var neutralCheckDef = await _context.CheckDefs.AsNoTracking()
-            .Where(x => x.Id > 0)
-            .OrderBy(x => x.Id)
-            .Select(x => new { x.Id, x.Type })
-            .FirstOrDefaultAsync(ct);
+        // The native transfer procedure deliberately uses the legacy neutral taraf
+        // reference (IDTaraf=0, IDTarafType=2) and the table defaults for CheckDef
+        // (IDSandogh=1, IDSandoghType=1). Validate the native reference row and
+        // provide a real user id for the document owner.
+        var neutralTarafExists = await _context.Tarafs.AsNoTracking()
+            .AnyAsync(x => x.Id == 0 && x.IdType == 2, ct);
 
         var neutralUserId = await _context.Users.AsNoTracking()
             .Where(x => x.Id > 0)
@@ -154,11 +146,11 @@ public sealed class StockTransferService
             .Select(x => (int?)x.Id)
             .FirstOrDefaultAsync(ct);
 
-        if (neutralTaraf == null || neutralCheckDef == null || !neutralUserId.HasValue)
+        if (!neutralTarafExists || !neutralUserId.HasValue)
             throw new ApiException(
                 409,
                 "TRANSFER_REFERENCE_DATA_MISSING",
-                "اطلاعات پایه لازم برای ثبت سند انتقال در دیتابیس موجود نیست.");
+                "رکوردهای پایه لازم برای ثبت سند انتقال موجود نیستند.");
 
         foreach (var item in items)
         {
