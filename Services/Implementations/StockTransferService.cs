@@ -540,6 +540,94 @@ WHERE IdSal = @IdSal
         Sanad Destination,
         List<StockTransferItemRequest> Items);
 
+    public async Task<ApiResponse<StockTransferResponse>> UpdateAsync(
+        int idSal,
+        string id,
+        UpdateStockTransferRequest request,
+        CancellationToken ct)
+    {
+        if (idSal <= 0 || string.IsNullOrWhiteSpace(id))
+            throw new ApiException(400, "INVALID_TRANSFER", "شناسه سند انتقال معتبر نیست.");
+        if (request.SourceAnbarId <= 0 || request.DestinationAnbarId <= 0 ||
+            request.SourceAnbarId == request.DestinationAnbarId)
+            throw new ApiException(400, "INVALID_WAREHOUSE", "انبار مبدأ و مقصد را به‌درستی انتخاب کنید.");
+        if (string.IsNullOrWhiteSpace(request.SabtDate) || request.SabtDate.Length != 10)
+            throw new ApiException(400, "INVALID_DATE", "تاریخ سند باید به صورت yyyy/MM/dd باشد.");
+
+        var newItems = NormalizeTransferItems(request.Items);
+        if (newItems.Count == 0)
+            throw new ApiException(400, "EMPTY_TRANSFER", "حداقل یک کالا برای انتقال انتخاب کنید.");
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        try
+        {
+            var original = await LoadActiveTransferAsync(idSal, id, ct);
+            await ReverseAndDisableTransferAsync(original.Source, original.Destination, original.Items, ct);
+
+            var result = await ApplyTransferMovementAsync(
+                idSal,
+                request.SourceAnbarId,
+                request.DestinationAnbarId,
+                request.SabtDate,
+                request.Note,
+                newItems,
+                description: null,
+                ct);
+
+            await transaction.CommitAsync(ct);
+            return ApiResponse<StockTransferResponse>.SuccessResult(
+                new StockTransferResponse
+                {
+                    IdSal = result.IdSal,
+                    Id = result.Id,
+                    SourceAnbarId = result.SourceAnbarId,
+                    DestinationAnbarId = result.DestinationAnbarId,
+                    ItemCount = result.ItemCount,
+                    Message = $"سند انتقال با موفقیت ویرایش شد. سند جدید: {result.Id}."
+                },
+                "سند انتقال با موفقیت ویرایش شد.");
+        }
+        catch
+        {
+            await transaction.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    public async Task<ApiResponse<StockTransferResponse>> DeleteAsync(
+        int idSal,
+        string id,
+        CancellationToken ct)
+    {
+        if (idSal <= 0 || string.IsNullOrWhiteSpace(id))
+            throw new ApiException(400, "INVALID_TRANSFER", "شناسه سند انتقال معتبر نیست.");
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        try
+        {
+            var original = await LoadActiveTransferAsync(idSal, id, ct);
+            var reverse = await ReverseAndDisableTransferAsync(
+                original.Source, original.Destination, original.Items, ct);
+
+            await transaction.CommitAsync(ct);
+            return ApiResponse<StockTransferResponse>.SuccessResult(
+                new StockTransferResponse
+                {
+                    IdSal = idSal,
+                    Id = id,
+                    SourceAnbarId = original.Source.IdAnbar,
+                    DestinationAnbarId = original.Destination.IdAnbar,
+                    ItemCount = original.Items.Count,
+                    Message = $"سند حذف شد؛ انتقال معکوس با سند {reverse.Id} ثبت شد."
+                },
+                "سند انتقال با موفقیت حذف شد و موجودی آن به‌صورت معکوس برگشت.");
+        }
+        catch
+        {
+            await transaction.RollbackAsync(ct);
+            throw;
+        }
+    }
     public async Task<ApiResponse<StockTransferResponse>> CreateAsync(
         StockTransferRequest request,
         CancellationToken ct)
