@@ -3,6 +3,7 @@ using KianStore.Api.Common;
 using KianStore.Api.Data;
 using KianStore.Api.DTOs.StockTransfers;
 using KianStore.Api.Models.KianStore;
+using KianStore.Api.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
