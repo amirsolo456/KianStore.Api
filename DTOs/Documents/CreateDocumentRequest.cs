@@ -11,6 +11,7 @@ public sealed class CreateDocumentRequest
     [Range(1, int.MaxValue)] public int IdTaraf { get; init; }
     [Range(0, int.MaxValue)] public int IdTarafType { get; init; } = 2;
     [Range(1, int.MaxValue)] public int IdMasool { get; init; } = 101;
+    [Range(1, int.MaxValue)] public int? PurchaseEmployeeId { get; init; }
     [Range(1, int.MaxValue)] public int? IdFaktor { get; init; }
     [Range(1, int.MaxValue)] public int IdSandogh { get; init; }
     [Range(0, int.MaxValue)] public int IdSandoghType { get; init; }
