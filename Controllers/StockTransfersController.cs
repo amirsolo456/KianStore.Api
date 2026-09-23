@@ -37,6 +37,14 @@ public sealed class StockTransfersController : ControllerBase
         CancellationToken ct = default)
         => Ok(await _service.GetInventoryAsync(idSal, sourceAnbarId, ct));
 
+    [HttpGet("history")]
+    public async Task<IActionResult> History(
+        [FromQuery] int idSal = 1405,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken ct = default)
+        => Ok(await _service.GetHistoryAsync(idSal, page, pageSize, ct));
+
     [HttpPost]
     public async Task<IActionResult> Create(
         [FromBody] StockTransferRequest request,
