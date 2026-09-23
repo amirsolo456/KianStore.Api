@@ -42,6 +42,53 @@ public sealed class StockTransferService
             "انبارها با موفقیت دریافت شدند.");
     }
 
+    public async Task<ApiResponse<IReadOnlyList<StockTransferProductWarehouseInventoryResponse>>> GetProductInventoryByWarehousesAsync(
+        int idSal,
+        string idKala,
+        CancellationToken ct)
+    {
+        idKala = idKala?.Trim() ?? string.Empty;
+        if (idSal <= 0 || string.IsNullOrWhiteSpace(idKala))
+            throw new ApiException(400, "INVALID_PRODUCT", "سال مالی یا کد کالا معتبر نیست.");
+
+        var warehouses = await _context.Anbars.AsNoTracking()
+            .Where(x => x.Id > 0 && !x.NoActive)
+            .OrderBy(x => x.Id == 1 ? 0 : 1)
+            .ThenBy(x => x.Name)
+            .Select(x => new { x.Id, x.Name })
+            .ToListAsync(ct);
+
+        var stocks = await (
+            from detail in _context.SanadDetails.AsNoTracking()
+            join sanad in _context.Sanads.AsNoTracking()
+                on new { detail.IdSal, Id = detail.IdSanad } equals new { sanad.IdSal, sanad.Id }
+            where detail.IdSal == idSal
+                  && detail.IdKala == idKala
+                  && !sanad.Disable
+                  && detail.SanadType != 16
+                  && detail.SanadType != 19
+            group detail by detail.IdAnbar into g
+            select new
+            {
+                IdAnbar = g.Key,
+                Stock = g.Sum(x => x.Bed2 - x.Bes2)
+            })
+            .ToDictionaryAsync(x => x.IdAnbar, x => (decimal)x.Stock, ct);
+
+        var result = warehouses
+            .Select(x => new StockTransferProductWarehouseInventoryResponse
+            {
+                IdAnbar = x.Id,
+                AnbarName = x.Name,
+                Stock = stocks.TryGetValue(x.Id, out var stock) ? stock : 0m
+            })
+            .ToList();
+
+        return ApiResponse<IReadOnlyList<StockTransferProductWarehouseInventoryResponse>>.SuccessResult(
+            result,
+            "موجودی کالا در انبارها با موفقیت دریافت شد.");
+    }
+
     public async Task<ApiResponse<IReadOnlyList<StockTransferInventoryResponse>>> GetInventoryAsync(
         int idSal,
         int sourceAnbarId,
