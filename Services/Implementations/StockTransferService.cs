@@ -93,6 +93,117 @@ public sealed class StockTransferService
             "موجودی انبار با موفقیت دریافت شد.");
     }
 
+    public async Task<ApiResponse<IReadOnlyList<StockTransferHistoryResponse>>> GetHistoryAsync(
+        int idSal,
+        int page,
+        int pageSize,
+        CancellationToken ct)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _context.Sanads.AsNoTracking()
+            .Where(x => x.SanadType == SourceTransferType && !x.Disable);
+
+        if (idSal > 0)
+            query = query.Where(x => x.IdSal == idSal);
+
+        var sourceHeaders = await query
+            .OrderByDescending(x => x.IdSal)
+            .ThenByDescending(x => x.IdFaktor)
+            .ThenByDescending(x => x.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        if (sourceHeaders.Count == 0)
+            return ApiResponse<IReadOnlyList<StockTransferHistoryResponse>>.SuccessResult(
+                Array.Empty<StockTransferHistoryResponse>(),
+                "تاریخچه انتقال بین انبارها خالی است.");
+
+        var relatedIds = sourceHeaders
+            .Select(x => GetRelatedSanadId(x.Id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var destinationHeaders = await _context.Sanads.AsNoTracking()
+            .Where(x => x.SanadType == DestinationTransferType &&
+                        sourceHeaders.Select(s => s.IdSal).Contains(x.IdSal) &&
+                        relatedIds.Contains(x.Id))
+            .ToListAsync(ct);
+
+        var destinationByKey = destinationHeaders.ToDictionary(
+            x => x.IdSal + "|" + x.Id,
+            StringComparer.Ordinal);
+
+        var sourceIds = sourceHeaders.Select(x => x.Id).ToList();
+        var sourceDetails = await _context.SanadDetails.AsNoTracking()
+            .Where(x => sourceHeaders.Select(s => s.IdSal).Contains(x.IdSal) &&
+                        sourceIds.Contains(x.IdSanad) &&
+                        x.SanadType == SourceTransferType)
+            .OrderBy(x => x.IdSal)
+            .ThenBy(x => x.IdSanad)
+            .ThenBy(x => x.Id2)
+            .ToListAsync(ct);
+
+        var kalaIds = sourceDetails.Select(x => x.IdKala).Distinct(StringComparer.Ordinal).ToList();
+        var productNames = await _context.Kalas.AsNoTracking()
+            .Where(x => kalaIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.KalaName })
+            .ToDictionaryAsync(x => x.Id, x => x.KalaName, StringComparer.Ordinal, ct);
+
+        var warehouseIds = sourceHeaders
+            .Select(x => x.IdAnbar)
+            .Concat(destinationHeaders.Select(x => x.IdAnbar))
+            .Distinct()
+            .ToList();
+
+        var warehouseNames = await _context.Anbars.AsNoTracking()
+            .Where(x => warehouseIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+
+        var detailLookup = sourceDetails.ToLookup(x => x.IdSal + "|" + x.IdSanad);
+
+        var result = new List<StockTransferHistoryResponse>(sourceHeaders.Count);
+        foreach (var source in sourceHeaders)
+        {
+            var relatedId = GetRelatedSanadId(source.Id);
+            destinationByKey.TryGetValue(source.IdSal + "|" + relatedId, out var destination);
+
+            var items = detailLookup[source.IdSal + "|" + source.Id]
+                .GroupBy(x => x.IdKala, StringComparer.Ordinal)
+                .Select(g => new StockTransferHistoryItemResponse
+                {
+                    IdKala = g.Key,
+                    Name = productNames.TryGetValue(g.Key, out var name) ? name : g.Key,
+                    Quantity = (decimal)g.Sum(x => x.Bes2 > 0 ? x.Bes2 : x.Bes)
+                })
+                .Where(x => x.Quantity > 0)
+                .ToList();
+
+            result.Add(new StockTransferHistoryResponse
+            {
+                IdSal = source.IdSal,
+                Id = source.Id,
+                IdFaktor = source.IdFaktor,
+                SabtDate = source.SabtDate,
+                Note = string.IsNullOrWhiteSpace(source.Sharh) ? source.Des : source.Sharh,
+                SourceAnbarId = source.IdAnbar,
+                SourceAnbarName = warehouseNames.TryGetValue(source.IdAnbar, out var sourceName) ? sourceName : $"انبار {source.IdAnbar}",
+                DestinationAnbarId = destination?.IdAnbar ?? 0,
+                DestinationAnbarName = destination == null
+                    ? "—"
+                    : (warehouseNames.TryGetValue(destination.IdAnbar, out var destinationName) ? destinationName : $"انبار {destination.IdAnbar}"),
+                ItemCount = items.Count,
+                Items = items
+            });
+        }
+
+        return ApiResponse<IReadOnlyList<StockTransferHistoryResponse>>.SuccessResult(
+            result,
+            "تاریخچه انتقال بین انبارها با موفقیت دریافت شد.");
+    }
+
     public async Task<ApiResponse<StockTransferResponse>> CreateAsync(
         StockTransferRequest request,
         CancellationToken ct)
