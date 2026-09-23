@@ -57,4 +57,19 @@ public sealed class StockTransfersController : ControllerBase
         [FromBody] StockTransferRequest request,
         CancellationToken ct)
         => StatusCode(201, await _service.CreateAsync(request, ct));
+
+    [HttpPut("{idSal:int}/{id}")]
+    public async Task<IActionResult> Update(
+        [FromRoute] int idSal,
+        [FromRoute] string id,
+        [FromBody] UpdateStockTransferRequest request,
+        CancellationToken ct)
+        => Ok(await _service.UpdateAsync(idSal, id, request, ct));
+
+    [HttpDelete("{idSal:int}/{id}")]
+    public async Task<IActionResult> Delete(
+        [FromRoute] int idSal,
+        [FromRoute] string id,
+        CancellationToken ct)
+        => Ok(await _service.DeleteAsync(idSal, id, ct));
 }
