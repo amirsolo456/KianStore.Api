@@ -265,10 +265,13 @@ public sealed class StockTransferService
                     bed: qty, bes: 0, sanadType: DestinationTransferType));
             }
 
-            _context.SanadDetails.AddRange(details);
-            await _context.SaveChangesAsync(ct);
+            // Insert SanadDetail with an explicit SQL column list. This avoids EF
+            // metadata issues in legacy KianStore databases and guarantees that no
+            // SQL timestamp/rowversion column is ever included in the INSERT.
+            await InsertTransferDetailsAsync(details, ct);
 
-            // Keep the optional stock cache synchronized when a row exists or can be created.
+            // Keep the optional stock cache synchronized. This also uses explicit SQL
+            // and never writes the timestamp/rowversion column.
             foreach (var item in items)
             {
                 await SetCachedStockAsync(
@@ -286,7 +289,6 @@ public sealed class StockTransferService
                     ct);
             }
 
-            await _context.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
             return ApiResponse<StockTransferResponse>.SuccessResult(
@@ -305,6 +307,104 @@ public sealed class StockTransferService
         {
             await transaction.RollbackAsync(ct);
             throw;
+        }
+    }
+
+    private async Task InsertTransferDetailsAsync(
+        IReadOnlyList<SanadDetail> details,
+        CancellationToken ct)
+    {
+        const string sql = """
+INSERT INTO dbo.SanadDetail
+(
+    IDSal, IDSanad, ID2, AtfNum, IDKala, Bed, Bes, BedMab, BesMab, Des, SumMab,
+    IDAnbar, IDKalaType, BedMabKharid, Maliat, Maliat1, Maliat2, TakhfifDarsad,
+    PorsantDarsad, HazKala, HazKalaKharid, IDSanjesh, IDSanjesh2, BedBesZarib,
+    SanadType, PropKala, PropKala2, Des1, Des2, Des3, SumBed, SumBes, HazKala2,
+    HazKala3, SumTakhfifKala, HazKala1, HazKalaGift1, HazKalaGift2, HazKalaGift3,
+    IdAttribValuesStock, TakhfifD2, TakhfifD3, TakhfifMab1, TakhfifMab2,
+    MaliatD1, MaliatD2, TasviehRoz, MaliatMab1, MaliatMab2, SumMabTakh,
+    SumMabMaliat, MabFroshByTakh, Bed2, Bes2, BedMab2, BesMab2, MabEzafatMoaf
+)
+VALUES
+(
+    @IdSal, @IdSanad, @Id2, @AtfNum, @IdKala, @Bed, @Bes, @BedMab, @BesMab, @Des, @SumMab,
+    @IdAnbar, @IdKalaType, @BedMabKharid, @Maliat, @Maliat1, @Maliat2, @TakhfifDarsad,
+    @PorsantDarsad, @HazKala, @HazKalaKharid, @IdSanjesh, @IdSanjesh2, @BedBesZarib,
+    @SanadType, @PropKala, @PropKala2, @Des1, @Des2, @Des3, @SumBed, @SumBes, @HazKala2,
+    @HazKala3, @SumTakhfifKala, @HazKala1, @HazKalaGift1, @HazKalaGift2, @HazKalaGift3,
+    @IdAttribValuesStock, @TakhfifD2, @TakhfifD3, @TakhfifMab1, @TakhfifMab2,
+    @MaliatD1, @MaliatD2, @TasviehRoz, @MaliatMab1, @MaliatMab2, @SumMabTakh,
+    @SumMabMaliat, @MabFroshByTakh, @Bed2, @Bes2, @BedMab2, @BesMab2, @MabEzafatMoaf
+);
+""";
+
+        foreach (var detail in details)
+        {
+            await using var command = _context.Database.GetDbConnection().CreateCommand();
+            command.CommandText = sql;
+            command.CommandType = CommandType.Text;
+            command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
+
+            AddParameter(command, "@IdSal", DbType.Int32, detail.IdSal);
+            AddParameter(command, "@IdSanad", DbType.AnsiString, detail.IdSanad);
+            AddParameter(command, "@Id2", DbType.Int32, detail.Id2);
+            AddParameter(command, "@AtfNum", DbType.AnsiString, (object?)detail.AtfNum ?? DBNull.Value);
+            AddParameter(command, "@IdKala", DbType.AnsiString, detail.IdKala);
+            AddParameter(command, "@Bed", DbType.Double, detail.Bed);
+            AddParameter(command, "@Bes", DbType.Double, detail.Bes);
+            AddParameter(command, "@BedMab", DbType.Decimal, detail.BedMab);
+            AddParameter(command, "@BesMab", DbType.Decimal, detail.BesMab);
+            AddParameter(command, "@Des", DbType.AnsiString, (object?)detail.Des ?? DBNull.Value);
+            AddParameter(command, "@SumMab", DbType.Decimal, detail.SumMab);
+            AddParameter(command, "@IdAnbar", DbType.Int32, detail.IdAnbar);
+            AddParameter(command, "@IdKalaType", DbType.Decimal, detail.IdKalaType);
+            AddParameter(command, "@BedMabKharid", DbType.Decimal, detail.BedMabKharid);
+            AddParameter(command, "@Maliat", DbType.Decimal, detail.Maliat);
+            AddParameter(command, "@Maliat1", DbType.Boolean, detail.Maliat1);
+            AddParameter(command, "@Maliat2", DbType.Boolean, detail.Maliat2);
+            AddParameter(command, "@TakhfifDarsad", DbType.Double, detail.TakhfifDarsad);
+            AddParameter(command, "@PorsantDarsad", DbType.Single, detail.PorsantDarsad);
+            AddParameter(command, "@HazKala", DbType.Decimal, detail.HazKala);
+            AddParameter(command, "@HazKalaKharid", DbType.Decimal, detail.HazKalaKharid);
+            AddParameter(command, "@IdSanjesh", DbType.Int32, detail.IdSanjesh);
+            AddParameter(command, "@IdSanjesh2", DbType.Int32, detail.IdSanjesh2);
+            AddParameter(command, "@BedBesZarib", DbType.Double, detail.BedBesZarib);
+            AddParameter(command, "@SanadType", DbType.Int32, detail.SanadType);
+            AddParameter(command, "@PropKala", DbType.Int32, (object?)detail.PropKala ?? DBNull.Value);
+            AddParameter(command, "@PropKala2", DbType.Int32, (object?)detail.PropKala2 ?? DBNull.Value);
+            AddParameter(command, "@Des1", DbType.AnsiString, (object?)detail.Des1 ?? DBNull.Value);
+            AddParameter(command, "@Des2", DbType.AnsiString, (object?)detail.Des2 ?? DBNull.Value);
+            AddParameter(command, "@Des3", DbType.AnsiString, (object?)detail.Des3 ?? DBNull.Value);
+            AddParameter(command, "@SumBed", DbType.Double, (object?)detail.SumBed ?? DBNull.Value);
+            AddParameter(command, "@SumBes", DbType.Double, (object?)detail.SumBes ?? DBNull.Value);
+            AddParameter(command, "@HazKala2", DbType.Decimal, (object?)detail.HazKala2 ?? DBNull.Value);
+            AddParameter(command, "@HazKala3", DbType.Decimal, (object?)detail.HazKala3 ?? DBNull.Value);
+            AddParameter(command, "@SumTakhfifKala", DbType.Decimal, detail.SumTakhfifKala);
+            AddParameter(command, "@HazKala1", DbType.Decimal, (object?)detail.HazKala1 ?? DBNull.Value);
+            AddParameter(command, "@HazKalaGift1", DbType.Decimal, (object?)detail.HazKalaGift1 ?? DBNull.Value);
+            AddParameter(command, "@HazKalaGift2", DbType.Decimal, (object?)detail.HazKalaGift2 ?? DBNull.Value);
+            AddParameter(command, "@HazKalaGift3", DbType.Decimal, (object?)detail.HazKalaGift3 ?? DBNull.Value);
+            AddParameter(command, "@IdAttribValuesStock", DbType.AnsiString, detail.IdAttribValuesStock);
+            AddParameter(command, "@TakhfifD2", DbType.Double, (object?)detail.TakhfifD2 ?? DBNull.Value);
+            AddParameter(command, "@TakhfifD3", DbType.Double, (object?)detail.TakhfifD3 ?? DBNull.Value);
+            AddParameter(command, "@TakhfifMab1", DbType.Decimal, (object?)detail.TakhfifMab1 ?? DBNull.Value);
+            AddParameter(command, "@TakhfifMab2", DbType.Decimal, (object?)detail.TakhfifMab2 ?? DBNull.Value);
+            AddParameter(command, "@MaliatD1", DbType.Double, (object?)detail.MaliatD1 ?? DBNull.Value);
+            AddParameter(command, "@MaliatD2", DbType.Double, (object?)detail.MaliatD2 ?? DBNull.Value);
+            AddParameter(command, "@TasviehRoz", DbType.Int32, (object?)detail.TasviehRoz ?? DBNull.Value);
+            AddParameter(command, "@MaliatMab1", DbType.Decimal, (object?)detail.MaliatMab1 ?? DBNull.Value);
+            AddParameter(command, "@MaliatMab2", DbType.Decimal, (object?)detail.MaliatMab2 ?? DBNull.Value);
+            AddParameter(command, "@SumMabTakh", DbType.Decimal, (object?)detail.SumMabTakh ?? DBNull.Value);
+            AddParameter(command, "@SumMabMaliat", DbType.Decimal, (object?)detail.SumMabMaliat ?? DBNull.Value);
+            AddParameter(command, "@MabFroshByTakh", DbType.Decimal, (object?)detail.MabFroshByTakh ?? DBNull.Value);
+            AddParameter(command, "@Bed2", DbType.Double, detail.Bed2);
+            AddParameter(command, "@Bes2", DbType.Double, detail.Bes2);
+            AddParameter(command, "@BedMab2", DbType.Decimal, detail.BedMab2);
+            AddParameter(command, "@BesMab2", DbType.Decimal, detail.BesMab2);
+            AddParameter(command, "@MabEzafatMoaf", DbType.Decimal, (object?)detail.MabEzafatMoaf ?? DBNull.Value);
+
+            await command.ExecuteNonQueryAsync(ct);
         }
     }
 
