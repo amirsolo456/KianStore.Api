@@ -73,7 +73,9 @@ public sealed class StockTransferService
         var result = new List<StockTransferInventoryResponse>(products.Count);
         foreach (var product in products)
         {
-            var stock = await _stockService.GetStockAsync(product.Id, sourceAnbarId, idSal, ct);
+            // Do not trust the optional KalaDetails cache here: a legacy row can exist with
+            // Quantity = 0 while the real stock is present in SanadDetails.
+            var stock = await CalculateStockFromDocumentsAsync(product.Id, sourceAnbarId, idSal, ct);
             if (stock <= 0) continue;
 
             result.Add(new StockTransferInventoryResponse
@@ -135,7 +137,7 @@ public sealed class StockTransferService
             if (!products.TryGetValue(item.IdKala, out var product) || product.IsDisabled)
                 throw new ApiException(404, "PRODUCT_NOT_FOUND", $"کالا با کد {item.IdKala} پیدا نشد.");
 
-            var sourceStock = await _stockService.GetStockAsync(
+            var sourceStock = await CalculateStockFromDocumentsAsync(
                 item.IdKala, request.SourceAnbarId, request.IdSal, ct);
 
             if (sourceStock < item.Quantity)
@@ -145,7 +147,7 @@ public sealed class StockTransferService
                     $"موجودی «{product.KalaName}» در انبار مبدأ کافی نیست. موجودی: {sourceStock}، درخواست: {item.Quantity}.");
 
             sourceStocks[item.IdKala] = sourceStock;
-            destinationStocks[item.IdKala] = await _stockService.GetStockAsync(
+            destinationStocks[item.IdKala] = await CalculateStockFromDocumentsAsync(
                 item.IdKala, request.DestinationAnbarId, request.IdSal, ct);
         }
 
@@ -157,7 +159,7 @@ public sealed class StockTransferService
             // Re-check inside the transaction so two simultaneous transfers cannot overspend stock.
             foreach (var item in items)
             {
-                var currentStock = await _stockService.GetStockAsync(
+                var currentStock = await CalculateStockFromDocumentsAsync(
                     item.IdKala, request.SourceAnbarId, request.IdSal, ct);
 
                 if (currentStock < item.Quantity)
@@ -313,6 +315,30 @@ public sealed class StockTransferService
             MabFroshByTakh = null,
             Bed2 = bed, Bes2 = bes, BedMab2 = 0, BesMab2 = 0, MabEzafatMoaf = null
         };
+    }
+
+    private async Task<decimal> CalculateStockFromDocumentsAsync(
+        string kalaId,
+        int idAnbar,
+        int idSal,
+        CancellationToken ct)
+    {
+        var calculatedStock = await (
+            from detail in _context.SanadDetails.AsNoTracking()
+            join sanad in _context.Sanads.AsNoTracking()
+                on new { detail.IdSal, Id = detail.IdSanad } equals new { sanad.IdSal, sanad.Id }
+            where detail.IdSal == idSal
+                  && detail.IdKala == kalaId
+                  && detail.IdAnbar == idAnbar
+                  && !sanad.Disable
+                  && detail.SanadType != 7
+                  && detail.SanadType != 15
+                  && detail.SanadType != 16
+                  && detail.SanadType != 19
+            select (double?)(detail.Bed2 - detail.Bes2))
+            .SumAsync(ct);
+
+        return (decimal)(calculatedStock ?? 0d);
     }
 
     private async Task<string> GenerateSanadIdAsync(int idSal, CancellationToken ct)
