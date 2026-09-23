@@ -29,6 +29,7 @@ public sealed class CreateDocumentRequest
 public sealed class CreateDocumentItemRequest
 {
     [Required, StringLength(20)] public string IdKala { get; init; } = null!;
+    [Range(0, int.MaxValue)] public int? IdAnbar { get; init; }
     [Range(typeof(decimal), "0.001", "79228162514264337593543950335")] public decimal Quantity { get; init; }
     [Range(typeof(decimal), "0", "79228162514264337593543950335")] public decimal? UnitPrice { get; init; }
     [Range(typeof(decimal), "0", "79228162514264337593543950335")] public decimal? PurchasePrice { get; init; }
