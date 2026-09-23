@@ -14,7 +14,6 @@ public class KianStoreDbContext : DbContext
     public DbSet<Taraf> Tarafs => Set<Taraf>();
     public DbSet<Anbar> Anbars => Set<Anbar>();
     public DbSet<Users> Users => Set<Users>();
-    public DbSet<PurchaseEmployee> PurchaseEmployees => Set<PurchaseEmployee>();
     public DbSet<CheckDef> CheckDefs => Set<CheckDef>();
     public DbSet<Sanad> Sanads => Set<Sanad>();
     public DbSet<SanadDetail> SanadDetails => Set<SanadDetail>();
@@ -58,7 +57,6 @@ public class KianStoreDbContext : DbContext
         modelBuilder.Entity<Taraf>(entity => entity.HasKey(x => new { x.Id, x.IdType }));
         modelBuilder.Entity<Anbar>(entity => entity.HasKey(x => x.Id));
         modelBuilder.Entity<Users>(entity => { entity.HasKey(x => x.Id); entity.Property(x => x.Id).HasColumnName("ID"); entity.Property(x => x.IdSandogh).HasColumnName("IDSandogh"); entity.Property(x => x.IdSandoghType).HasColumnName("IDSandoghType"); });
-        modelBuilder.Entity<PurchaseEmployee>(entity => { entity.HasKey(x => x.Id); entity.Property(x => x.Name).HasMaxLength(100).IsRequired(); entity.Property(x => x.Mobile).HasMaxLength(70); });
         modelBuilder.Entity<CheckDef>(entity => { entity.HasKey(x => new { x.Id, x.Type }); entity.Property(x => x.Mojodi).HasPrecision(18, 0); });
         modelBuilder.Entity<Sanad>(entity => { entity.HasKey(x => new { x.IdSal, x.Id }); entity.Property(x => x.MabKol).HasPrecision(18, 3); entity.Property(x => x.SmsStatus).HasMaxLength(20); entity.Property(x => x.MabNaghd).HasPrecision(18, 3); entity.Property(x => x.MabFrosh).HasPrecision(18, 3); entity.Property(x => x.Takhfif).HasPrecision(18, 3); entity.Property(x => x.MabDarSad).HasPrecision(18, 3); });
         modelBuilder.Entity<SanadDetail>(entity => { entity.HasKey(x => new { x.IdSal, x.IdSanad, x.Id2 }); entity.Property(x => x.BedMab).HasPrecision(18, 5); entity.Property(x => x.BesMab).HasPrecision(18, 5); entity.Property(x => x.SumMab).HasPrecision(18, 3); entity.Property(x => x.BedMabKharid).HasPrecision(18, 3); entity.Property(x => x.Maliat).HasPrecision(18, 3); entity.Property(x => x.HazKala).HasPrecision(18, 3); entity.Property(x => x.HazKalaKharid).HasPrecision(18, 3); entity.Property(x => x.BedMab2).HasPrecision(18, 5); entity.Property(x => x.BesMab2).HasPrecision(18, 5); entity.Property(x => x.SumTakhfifKala).HasPrecision(18, 3); });
