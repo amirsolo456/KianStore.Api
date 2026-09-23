@@ -28,6 +28,7 @@ builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IDocumentMutationService, DocumentMutationService>();
 builder.Services.AddScoped<SaleDocumentMutationService>();
+builder.Services.AddScoped<StockTransferService>();
 
 builder.Services.AddScoped<ISanadAuditService, SanadAuditService>();
 builder.Services.AddScoped<DiscountCodeService>();
@@ -69,6 +70,33 @@ BEGIN
         DECLARE @alterSql nvarchar(max);
         SET @alterSql = N'ALTER TABLE dbo.Sanad DROP CONSTRAINT [CK_Sanad_SanadType];'; EXEC sys.sp_executesql @alterSql;
         SET @alterSql = N'ALTER TABLE dbo.Sanad ADD CONSTRAINT [CK_Sanad_SanadType] CHECK (' + @definition + N' OR [SanadType] = 113);'; EXEC sys.sp_executesql @alterSql;
+    END;
+END;
+
+IF OBJECT_ID(N'dbo.Sanad', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dbo.SanadType WHERE ID = 114)
+    BEGIN
+        INSERT INTO dbo.SanadType
+        (ID, SanadTypeName, AnbarCaption, ToCaption, TarafType, BedBesType, ByAnbar, ByMali, Disable, IDFaktorAuto, SanadTypeMabna, SanadTypeMabna2, SanadTypeMabna3, IsAllowNoMabna, Emzae1, Emzae2, Emzae3, Emzae4)
+        SELECT 114, N'انتقال موجودی بین انبارها', AnbarCaption, ToCaption, TarafType, BedBesType, ByAnbar, ByMali, Disable, IDFaktorAuto, SanadTypeMabna, SanadTypeMabna2, SanadTypeMabna3, IsAllowNoMabna, Emzae1, Emzae2, Emzae3, Emzae4
+        FROM dbo.SanadType WHERE ID = 12;
+    END;
+
+    DECLARE @definition114 nvarchar(max);
+    SELECT @definition114 = cc.definition
+    FROM sys.check_constraints AS cc
+    WHERE cc.name = N'CK_Sanad_SanadType' AND cc.parent_object_id = OBJECT_ID(N'dbo.Sanad');
+
+    IF @definition114 IS NOT NULL
+       AND @definition114 NOT LIKE N'%[[]SanadType[]] = 114%'
+       AND @definition114 NOT LIKE N'%SanadType = 114%'
+    BEGIN
+        DECLARE @alterSql114 nvarchar(max);
+        SET @alterSql114 = N'ALTER TABLE dbo.Sanad DROP CONSTRAINT [CK_Sanad_SanadType];';
+        EXEC sys.sp_executesql @alterSql114;
+        SET @alterSql114 = N'ALTER TABLE dbo.Sanad ADD CONSTRAINT [CK_Sanad_SanadType] CHECK (' + @definition114 + N' OR [SanadType] = 114);';
+        EXEC sys.sp_executesql @alterSql114;
     END;
 END;
 
