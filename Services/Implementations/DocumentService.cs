@@ -32,9 +32,9 @@ public sealed class DocumentService : IDocumentService
         if (request.SanadType == 11 && request.PurchaseEmployeeId.HasValue)
         {
             var userExists = await _context.Users.AsNoTracking().AnyAsync(
-                x => x.Id == request.PurchaseEmployeeId.Value,
+                x => x.Id == request.PurchaseEmployeeId.Value && x.IdAnbar > 0,
                 cancellationToken);
-            if (!userExists) throw new ApiException(404, "PURCHASE_EMPLOYEE_NOT_FOUND", "کارمند خریدار مورد نظر در فهرست کاربران یافت نشد.");
+            if (!userExists) throw new ApiException(404, "PURCHASE_EMPLOYEE_NOT_FOUND", "خریدار داخلی مورد نظر یافت نشد یا انبار اختصاصی ندارد.");
         }
 
         if (!request.IsPending)
@@ -66,9 +66,17 @@ public sealed class DocumentService : IDocumentService
             var purchaseResponsibleUserId = request.SanadType == 11 && request.PurchaseEmployeeId.HasValue
                 ? request.PurchaseEmployeeId.Value
                 : request.IdMasool;
+            var purchaseAnbarId = request.IdAnbar;
+            if (request.SanadType == 11 && request.PurchaseEmployeeId.HasValue)
+            {
+                purchaseAnbarId = await _context.Users.AsNoTracking()
+                    .Where(x => x.Id == request.PurchaseEmployeeId.Value)
+                    .Select(x => x.IdAnbar)
+                    .FirstAsync(cancellationToken);
+            }
             var sanad = new Sanad
             {
-                IdSal = request.IdSal, Id = sanadId, SanadType = request.SanadType, IdAnbar = request.IdAnbar,
+                IdSal = request.IdSal, Id = sanadId, SanadType = request.SanadType, IdAnbar = purchaseAnbarId,
                 IdTaraf = request.IdTaraf, IdTarafType = request.IdTarafType, IdFaktor = factorId, IdTypeMab = 0,
                 Takhfif = 0, MabDarSad = 0, MabKol = 0, MabNaghd = 0, MabFrosh = 0, SabtDate = request.SabtDate,
                 MabCheck = 0, MabBed = 0, IdMasool = purchaseResponsibleUserId, IdTaiid = null, Des = request.Des,
@@ -86,7 +94,7 @@ public sealed class DocumentService : IDocumentService
                 TakhfifOnvan = null, MabEzaf = 0, MabEzafDarsad = 0, MabEzafOnvan = null, SefareshID = request.SefareshID,
                 IsSavedFinal = !request.IsPending, IDSanad = 0, Takhfif3 = 0, TakhfifKala = 0, IDFish = 0, IDFoodMahal = 0,
                 Tel = null, Add = null, CodeMeli = null, Miz = null, GpsLat = 0, GpsLong = 0, TasvieType = 0,
-                TasvieCheck = 0, IDAnbar2 = request.IdAnbar, IDTaraf2 = request.IdTaraf, HMarketID = await GetMarketIdAsync(cancellationToken),
+                TasvieCheck = 0, IDAnbar2 = purchaseAnbarId, IDTaraf2 = request.IdTaraf, HMarketID = await GetMarketIdAsync(cancellationToken),
                 IDRef = string.Empty, SanadTypeRef = 0, IDRefRecive = string.Empty, FroshArzesh = null, TakhfifKalaArzesh = null,
                 HMaliat1 = null, HMaliat2 = null, TejaratCode = null, StateMaliat = 0, SabtDateOrg = request.SabtDate,
                 MabBonKart = 0, MabBonKartTakhfif = 0, Takhfif1 = 0, IDTarafTahator = request.IdTaraf, TasviehRozSum = null,
@@ -113,7 +121,7 @@ public sealed class DocumentService : IDocumentService
                     IdSal = request.IdSal, IdSanad = sanadId, Id2 = row++, AtfNum = null, IdKala = product.Id,
                     Bed = item.IsIncoming ? (double)item.Quantity : 0, Bes = item.IsIncoming ? 0 : (double)item.Quantity,
                     BedMab = item.IsIncoming ? unitPrice : 0, BesMab = item.IsIncoming ? 0 : unitPrice, Des = item.Description,
-                    SumMab = lineTotal, SumMabTakh = lineDiscount, SumTakhfifKala = lineDiscount, IdAnbar = request.IdAnbar, IdKalaType = product.KalaType, BedMabKharid = purchaseUnitPrice,
+                    SumMab = lineTotal, SumMabTakh = lineDiscount, SumTakhfifKala = lineDiscount, IdAnbar = purchaseAnbarId, IdKalaType = product.KalaType, BedMabKharid = purchaseUnitPrice,
                     Maliat = 0, Maliat1 = false, Maliat2 = false, TakhfifDarsad = 0, PorsantDarsad = 0, HazKala = 0,
                     HazKalaKharid = 0, IdSanjesh = product.IdSanjesh, IdSanjesh2 = product.IdSanjesh2, BedBesZarib = 1,
                     SanadType = request.SanadType, PropKala = null, PropKala2 = null, Des1 = null, Des2 = null, Des3 = null,
