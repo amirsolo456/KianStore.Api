@@ -11,6 +11,7 @@ namespace KianStore.Api.Services.Implementations;
 
 public sealed class StockTransferService
 {
+    public const string EngineVersion = "native-sanad-6-7-v2";
     private const int SourceTransferType = 6;
     private const int DestinationTransferType = 7;
 
@@ -152,6 +153,25 @@ public sealed class StockTransferService
                 "TRANSFER_REFERENCE_DATA_MISSING",
                 "رکوردهای پایه لازم برای ثبت سند انتقال موجود نیستند.");
 
+        var nativeProcedureExists = await _context.Database
+            .SqlQueryRaw<int>("SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.InsertTwoSanadRelated') AND type = 'P') THEN 1 ELSE 0 END AS [Value]")
+            .SingleAsync(ct);
+
+        if (nativeProcedureExists != 1)
+            throw new ApiException(
+                409,
+                "TRANSFER_PROCEDURE_MISSING",
+                "Procedure اصلی انتقال انبار (InsertTwoSanadRelated) در دیتابیس پیدا نشد.");
+
+        var defaultCheckDefExists = await _context.CheckDefs.AsNoTracking()
+            .AnyAsync(x => x.Id == 1 && x.Type == 1, ct);
+
+        if (!defaultCheckDefExists)
+            throw new ApiException(
+                409,
+                "TRANSFER_CHECKDEF_MISSING",
+                "حساب پیش‌فرض CheckDef با شناسه 1 و نوع 1 در دیتابیس وجود ندارد؛ ثبت سند انتقال در ساختار اصلی KianStore ممکن نیست.");
+
         foreach (var item in items)
         {
             if (!products.TryGetValue(item.IdKala, out var product) || product.IsDisabled)
@@ -205,6 +225,26 @@ public sealed class StockTransferService
                 neutralUserId.Value,
                 request.Note,
                 ct);
+
+            var nativeHeaders = await _context.Sanads.AsNoTracking()
+                .Where(x => x.IdSal == request.IdSal && (x.Id == sanadId || x.Id == secondSanadId))
+                .Select(x => new { x.Id, x.SanadType, x.IdAnbar })
+                .ToListAsync(ct);
+
+            var sourceHeader = nativeHeaders.FirstOrDefault(x => x.Id == sanadId);
+            var destinationHeader = nativeHeaders.FirstOrDefault(x => x.Id == secondSanadId);
+
+            if (sourceHeader == null || destinationHeader == null ||
+                sourceHeader.SanadType != SourceTransferType ||
+                destinationHeader.SanadType != DestinationTransferType ||
+                sourceHeader.IdAnbar != request.SourceAnbarId ||
+                destinationHeader.IdAnbar != request.DestinationAnbarId)
+            {
+                throw new ApiException(
+                    409,
+                    "TRANSFER_NATIVE_HEADER_INVALID",
+                    "دستور انتقال داخلی دیتابیس سندهای نوع 6 و 7 را مطابق انبارهای مبدأ و مقصد ایجاد نکرد.");
+            }
 
             var details = new List<SanadDetail>();
             var row = 1;
