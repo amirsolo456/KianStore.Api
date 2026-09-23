@@ -37,6 +37,13 @@ public sealed class StockTransfersController : ControllerBase
         CancellationToken ct = default)
         => Ok(await _service.GetInventoryAsync(idSal, sourceAnbarId, ct));
 
+    [HttpGet("product-inventory")]
+    public async Task<IActionResult> GetProductInventory(
+        [FromQuery] int idSal = 1405,
+        [FromQuery] string idKala = "",
+        CancellationToken ct = default)
+        => Ok(await _service.GetProductInventoryByWarehousesAsync(idSal, idKala, ct));
+
     [HttpGet("history")]
     public async Task<IActionResult> History(
         [FromQuery] int idSal = 1405,
