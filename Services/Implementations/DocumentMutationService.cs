@@ -245,6 +245,7 @@ public sealed class DocumentMutationService : IDocumentMutationService
             var product = products[item.IdKala];
             var unitPrice = item.UnitPrice ?? product.MabFrosh;
             var purchasePrice = item.PurchasePrice ?? product.MabKharid;
+            var itemWarehouseId = item.IdAnbar ?? request.IdAnbar;
             var total = unitPrice * item.Quantity;
             details.Add(new SanadDetail
             {
@@ -258,7 +259,7 @@ public sealed class DocumentMutationService : IDocumentMutationService
                 BesMab = unitPrice,
                 Des = item.Description,
                 SumMab = total,
-                IdAnbar = request.IdAnbar,
+                IdAnbar = itemWarehouseId,
                 IdKalaType = product.KalaType,
                 BedMabKharid = purchasePrice,
                 Maliat = 0,
