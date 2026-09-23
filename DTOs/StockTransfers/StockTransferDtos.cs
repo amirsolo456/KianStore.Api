@@ -10,6 +10,17 @@ public sealed class StockTransferRequest
     public List<StockTransferItemRequest> Items { get; init; } = [];
 }
 
+
+public sealed class UpdateStockTransferRequest
+{
+    public int IdSal { get; init; } = 1405;
+    public int SourceAnbarId { get; init; }
+    public int DestinationAnbarId { get; init; }
+    public string SabtDate { get; init; } = string.Empty;
+    public string? Note { get; init; }
+    public List<StockTransferItemRequest> Items { get; init; } = [];
+}
+
 public sealed class StockTransferItemRequest
 {
     public string IdKala { get; init; } = string.Empty;
