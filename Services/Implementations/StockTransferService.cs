@@ -484,23 +484,37 @@ public sealed class StockTransferService
         Kala product,
         CancellationToken ct)
     {
-        var row = await _context.KalaDetails
-            .FirstOrDefaultAsync(x => x.IdKala == kalaId && x.IdAnbar == idAnbar, ct);
+        // KalaDetail.lastChanged is a SQL Server timestamp/rowversion column.
+        // Never let EF generate an INSERT/UPDATE for that column during this
+        // cache synchronization. Use explicit SQL column lists instead.
+        var safeQuantity = Math.Max(0d, (double)quantity);
 
-        if (row == null)
-        {
-            _context.KalaDetails.Add(new KalaDetail
-            {
-                IdKala = kalaId,
-                IdAnbar = idAnbar,
-                Quantity = (double)Math.Max(0, quantity),
-                LastMabKharid = product.MabKharid,
-                MabFrosh = product.MabFrosh
-            });
-        }
-        else
-        {
-            row.Quantity = (double)Math.Max(0, quantity);
-        }
+        var sql = """
+IF EXISTS (
+    SELECT 1
+    FROM dbo.KalaDetail WITH (UPDLOCK, HOLDLOCK)
+    WHERE IDKala = {0} AND IDAnbar = {1}
+)
+BEGIN
+    UPDATE dbo.KalaDetail
+    SET Quantity = {2}
+    WHERE IDKala = {0} AND IDAnbar = {1};
+END
+ELSE
+BEGIN
+    INSERT INTO dbo.KalaDetail
+        (IDKala, IDAnbar, Quantity, LastMabKharid, MabFrosh, MabFrosh1)
+    VALUES
+        ({0}, {1}, {2}, {3}, {4}, NULL);
+END
+""";
+
+        await _context.Database.ExecuteSqlRawAsync(
+            sql,
+            kalaId,
+            idAnbar,
+            safeQuantity,
+            product.MabKharid,
+            product.MabFrosh);
     }
 }
