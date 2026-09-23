@@ -13,6 +13,19 @@ public sealed class StockTransfersController : ControllerBase
 
     public StockTransfersController(StockTransferService service) => _service = service;
 
+    [HttpGet("engine")]
+    public IActionResult GetEngine()
+        => Ok(ApiResponse<object>.SuccessResult(
+            new
+            {
+                Engine = StockTransferService.EngineVersion,
+                SourceSanadType = 6,
+                DestinationSanadType = 7,
+                Procedure = "dbo.InsertTwoSanadRelated",
+                CustomSanadType114 = false
+            },
+            "موتور انتقال موجودی نسخه 6/7 است."));
+
     [HttpGet("warehouses")]
     public async Task<IActionResult> GetWarehouses(CancellationToken ct)
         => Ok(await _service.GetWarehousesAsync(ct));
