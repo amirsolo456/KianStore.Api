@@ -53,7 +53,8 @@ public sealed class DocumentService : IDocumentService
             if (product.IsDisabled) throw new ApiException(409, "PRODUCT_DISABLED", $"کالای {item.IdKala} غیرفعال است.");
             if (!item.IsIncoming && request.CheckStock)
             {
-                var stock = await _stockService.CheckAsync(item.IdKala, item.Quantity, request.IdAnbar, request.IdSal, cancellationToken);
+                var stockWarehouseId = item.IdAnbar ?? request.IdAnbar;
+                var stock = await _stockService.CheckAsync(item.IdKala, item.Quantity, stockWarehouseId, request.IdSal, cancellationToken);
                 if (!stock.IsAvailable) stockWarnings.Add(new { code = "INSUFFICIENT_STOCK", message = $"موجودی کالای {item.IdKala} کافی نبود.", stock.KalaId, stock.IdAnbar, stock.IdSal, stock.Requested, stock.Available, stock.IsAvailable });
             }
         }
@@ -113,6 +114,7 @@ public sealed class DocumentService : IDocumentService
                 var purchaseUnitPrice = request.IsPending ? 0 : item.PurchasePrice ?? product.MabKharid;
                 var grossLineTotal = unitPrice * item.Quantity;
                 var lineDiscount = Math.Clamp(item.Discount, 0m, grossLineTotal);
+                var itemWarehouseId = item.IdAnbar ?? request.IdAnbar;
                 var lineTotal = grossLineTotal - lineDiscount;
                 total += lineTotal;
                 totalDiscount += lineDiscount;
@@ -121,7 +123,7 @@ public sealed class DocumentService : IDocumentService
                     IdSal = request.IdSal, IdSanad = sanadId, Id2 = row++, AtfNum = null, IdKala = product.Id,
                     Bed = item.IsIncoming ? (double)item.Quantity : 0, Bes = item.IsIncoming ? 0 : (double)item.Quantity,
                     BedMab = item.IsIncoming ? unitPrice : 0, BesMab = item.IsIncoming ? 0 : unitPrice, Des = item.Description,
-                    SumMab = lineTotal, SumMabTakh = lineDiscount, SumTakhfifKala = lineDiscount, IdAnbar = purchaseAnbarId, IdKalaType = product.KalaType, BedMabKharid = purchaseUnitPrice,
+                    SumMab = lineTotal, SumMabTakh = lineDiscount, SumTakhfifKala = lineDiscount, IdAnbar = itemWarehouseId, IdKalaType = product.KalaType, BedMabKharid = purchaseUnitPrice,
                     Maliat = 0, Maliat1 = false, Maliat2 = false, TakhfifDarsad = 0, PorsantDarsad = 0, HazKala = 0,
                     HazKalaKharid = 0, IdSanjesh = product.IdSanjesh, IdSanjesh2 = product.IdSanjesh2, BedBesZarib = 1,
                     SanadType = request.SanadType, PropKala = null, PropKala2 = null, Des1 = null, Des2 = null, Des3 = null,
