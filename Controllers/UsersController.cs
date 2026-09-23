@@ -24,7 +24,6 @@ public sealed class UsersController : ControllerBase
             {
                 Id = x.Id,
                 Name = x.UserFLName,
-                Post = x.Post,
                 IdAnbar = x.IdAnbar,
                 AnbarName = _db.Anbars.Where(a => a.Id == x.IdAnbar).Select(a => a.Name).FirstOrDefault()
             })
