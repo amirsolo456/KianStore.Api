@@ -11,7 +11,8 @@ namespace KianStore.Api.Services.Implementations;
 
 public sealed class StockTransferService
 {
-    private const int TransferType = 114;
+    private const int SourceTransferType = 6;
+    private const int DestinationTransferType = 7;
 
     private readonly KianStoreDbContext _context;
     private readonly IStockService _stockService;
@@ -197,58 +198,21 @@ public sealed class StockTransferService
             }
 
             var sanadId = await GenerateSanadIdAsync(request.IdSal, ct);
-            var factorId = (await _context.Sanads
-                .Where(x => x.IdSal == request.IdSal && x.SanadType == TransferType)
-                .Select(x => (int?)x.IdFaktor)
-                .MaxAsync(ct) ?? 0) + 1;
+            // Use the legacy/native transfer mechanism: two linked Sanad headers
+            // (type 6 = source/out, type 7 = destination/in). This is the same mechanism
+            // used by the existing database procedures and keeps all legacy constraints intact.
+            var secondSanadId = GetRelatedSanadId(sanadId);
 
-            var sanad = new Sanad
-            {
-                IdSal = request.IdSal,
-                Id = sanadId,
-                SanadType = TransferType,
-                IdAnbar = request.SourceAnbarId,
-                IdTaraf = neutralTaraf.Id,
-                IdTarafType = neutralTaraf.IdType,
-                IdFaktor = factorId,
-                IdTypeMab = 0,
-                Takhfif = 0, MabDarSad = 0, MabKol = 0, MabNaghd = 0, MabFrosh = 0,
-                SabtDate = request.SabtDate,
-                MabCheck = 0, MabBed = 0, IdMasool = neutralUserId.Value,
-                IdTaiid = null, Des = "انتقال موجودی بین انبارها", IDEijad = null, IdDoreh = null,
-                CountGhest = 0, DarsadGhest = 0,
-                Maliat1 = 0, Maliat1Darsad = 0, Maliat1Sel = false,
-                Maliat2 = 0, Maliat2Darsad = 0, Maliat2Sel = false,
-                MabHarGhest = 0, MabKolAghsat = 0, GhestSel = false, KarmozdFrosh = 0,
-                TarafName2 = null, Sharh = request.Note,
-                Takhfif2 = 0, IsTasvieh = false, TasviehID = 0, Disable = false,
-                IDSanadEx = 0, IDSanadEx2 = 0, IDSanadEx3 = 0,
-                ShowInSanad = true, ShowInFaktor = false,
-                TasviehDate = request.SabtDate, IsTasviehDate = false,
-                IDSandogh = neutralCheckDef.Id, IDSandoghType = neutralCheckDef.Type,
-                MabKart = 0, MabFish = 0, IDKart = 0, IDTypeKart = 0,
-                IsFinal = true, IDFroshMabType = 0, SanadTime = DateTime.Now.ToString("HH:mm:ss"),
-                TakhfifKala1 = false, TakhfifKala2 = false, TakhfifKala3 = false,
-                IsMaliat1Darsad = false, IsMaliat1Kala = false,
-                IsMaliat2Darsad = false, IsMaliat2Kala = false,
-                IsPorsant = false, IsPorsantMabKol = false, IsPorsantMabKala = false,
-                HazFaktor = 0, IDHazFaktor = 0, HazFaktor2 = 0, IDHazFaktor2 = 0,
-                TakhfifDarsad = 0, TakhfifOnvan = null, MabEzaf = 0, MabEzafDarsad = 0,
-                MabEzafOnvan = null, SefareshID = null, IsSavedFinal = true, IDSanad = 0,
-                Takhfif3 = 0, TakhfifKala = 0, IDFish = 0, IDFoodMahal = 0,
-                Tel = null, Add = null, CodeMeli = null, Miz = null, GpsLat = 0, GpsLong = 0,
-                TasvieType = 0, TasvieCheck = 0,
-                IDAnbar2 = request.DestinationAnbarId, IDTaraf2 = neutralTaraf.Id,
-                HMarketID = await GetMarketIdAsync(ct),
-                IDRef = string.Empty, SanadTypeRef = 0, IDRefRecive = string.Empty,
-                FroshArzesh = null, TakhfifKalaArzesh = null, HMaliat1 = null, HMaliat2 = null,
-                TejaratCode = null, StateMaliat = 0, SabtDateOrg = request.SabtDate,
-                MabBonKart = 0, MabBonKartTakhfif = 0, Takhfif1 = 0, IDTarafTahator = neutralTaraf.Id,
-                TasviehRozSum = null, IDSanadAtf = null, MabFroshCalNaghd = null,
-                MabCalNaghd = null, MabKarMozd = null, MabTahator = null,
-                SumMabEzafatMoaf = null, IDState = null, CodeMaliat = null,
-                IsTasviehFaktor = null, TasviehMab = null
-            };
+            await InsertNativeTransferHeadersAsync(
+                request.IdSal,
+                sanadId,
+                secondSanadId,
+                request.SourceAnbarId,
+                request.DestinationAnbarId,
+                request.SabtDate,
+                neutralUserId.Value,
+                request.Note,
+                ct);
 
             var details = new List<SanadDetail>();
             var row = 1;
@@ -258,18 +222,17 @@ public sealed class StockTransferService
                 var product = products[item.IdKala];
                 var qty = (double)item.Quantity;
 
-                // Source row: stock leaves the source warehouse.
+                // Type 6 / first linked sanad: stock leaves the source warehouse.
                 details.Add(CreateDetail(
                     request.IdSal, sanadId, row++, product, request.SourceAnbarId,
-                    bed: 0, bes: qty));
+                    bed: 0, bes: qty, sanadType: SourceTransferType));
 
-                // Destination row: the same stock enters the destination warehouse.
+                // Type 7 / second linked sanad: the same stock enters the destination warehouse.
                 details.Add(CreateDetail(
-                    request.IdSal, sanadId, row++, product, request.DestinationAnbarId,
-                    bed: qty, bes: 0));
+                    request.IdSal, secondSanadId, row++, product, request.DestinationAnbarId,
+                    bed: qty, bes: 0, sanadType: DestinationTransferType));
             }
 
-            _context.Sanads.Add(sanad);
             _context.SanadDetails.AddRange(details);
             await _context.SaveChangesAsync(ct);
 
@@ -302,7 +265,7 @@ public sealed class StockTransferService
                     SourceAnbarId = request.SourceAnbarId,
                     DestinationAnbarId = request.DestinationAnbarId,
                     ItemCount = items.Count,
-                    Message = "انتقال موجودی با موفقیت ثبت شد."
+                    Message = $"انتقال موجودی با موفقیت ثبت شد. سند مبدأ: {sanadId}، سند مقصد: {secondSanadId}."
                 },
                 "انتقال موجودی با موفقیت ثبت شد.");
         }
@@ -320,7 +283,8 @@ public sealed class StockTransferService
         Kala product,
         int idAnbar,
         double bed,
-        double bes)
+        double bes,
+        int sanadType)
     {
         return new SanadDetail
         {
@@ -331,7 +295,7 @@ public sealed class StockTransferService
             Maliat = 0, Maliat1 = false, Maliat2 = false, TakhfifDarsad = 0,
             PorsantDarsad = 0, HazKala = 0, HazKalaKharid = 0,
             IdSanjesh = product.IdSanjesh, IdSanjesh2 = product.IdSanjesh2,
-            BedBesZarib = 1, SanadType = TransferType,
+            BedBesZarib = 1, SanadType = sanadType,
             PropKala = null, PropKala2 = null, Des1 = null, Des2 = null, Des3 = null,
             SumBed = null, SumBes = null, HazKala2 = null, HazKala3 = null,
             SumTakhfifKala = 0, HazKala1 = null, HazKalaGift1 = null,
@@ -342,6 +306,68 @@ public sealed class StockTransferService
             MabFroshByTakh = null,
             Bed2 = bed, Bes2 = bes, BedMab2 = 0, BesMab2 = 0, MabEzafatMoaf = null
         };
+    }
+
+    private static string GetRelatedSanadId(string sanadId)
+    {
+        if (!int.TryParse(sanadId, out var numericId))
+            throw new ApiException(409, "INVALID_SANAD_ID", "شماره داخلی سند انتقال معتبر نیست.");
+
+        return (numericId + 1).ToString().PadLeft(sanadId.Length, '0');
+    }
+
+    private async Task InsertNativeTransferHeadersAsync(
+        int idSal,
+        string sourceSanadId,
+        string destinationSanadId,
+        int sourceAnbarId,
+        int destinationAnbarId,
+        string sabtDate,
+        int responsibleUserId,
+        string? note,
+        CancellationToken ct)
+    {
+        await using var command = _context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "dbo.InsertTwoSanadRelated";
+        command.CommandType = CommandType.StoredProcedure;
+        command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
+
+        AddParameter(command, "@IDSal", DbType.Int32, idSal);
+        AddParameter(command, "@IDSanad", DbType.AnsiString, sourceSanadId);
+        AddParameter(command, "@SanadType1", DbType.Int32, SourceTransferType);
+        AddParameter(command, "@SanadType2", DbType.Int32, DestinationTransferType);
+        AddParameter(command, "@IDAnbar1", DbType.Int32, sourceAnbarId);
+        AddParameter(command, "@IDAnbar2", DbType.Int32, destinationAnbarId);
+        AddParameter(command, "@IDTaraf", DbType.Int32, 0);
+        AddParameter(command, "@IDTarafType", DbType.Int32, 2);
+        AddParameter(command, "@SabtDate", DbType.AnsiString, sabtDate);
+        AddParameter(command, "@IDMasool", DbType.Int32, responsibleUserId);
+        AddParameter(command, "@Des1", DbType.AnsiString, "انتقال موجودی بین انبارها");
+        AddParameter(command, "@Des2", DbType.AnsiString, "انتقال موجودی بین انبارها");
+        AddParameter(command, "@TarafName2", DbType.AnsiString, string.Empty);
+        AddParameter(command, "@Sharh1", DbType.AnsiString, note ?? string.Empty);
+        AddParameter(command, "@Sharh2", DbType.AnsiString, note ?? string.Empty);
+        AddParameter(command, "@Disable1", DbType.Boolean, false);
+        AddParameter(command, "@Disable2", DbType.Boolean, false);
+        AddParameter(command, "@IDSanadEx2", DbType.Int32, 0);
+        AddParameter(command, "@IDSanadEx3", DbType.Int32, 0);
+        AddParameter(command, "@ShowInSanad", DbType.Boolean, true);
+        AddParameter(command, "@ShowInFaktor", DbType.Boolean, false);
+
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    private static void AddParameter(
+        System.Data.Common.DbCommand command,
+        string name,
+        DbType dbType,
+        object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.DbType = dbType;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 
     private async Task<decimal> CalculateStockFromDocumentsAsync(
@@ -358,8 +384,6 @@ public sealed class StockTransferService
                   && detail.IdKala == kalaId
                   && detail.IdAnbar == idAnbar
                   && !sanad.Disable
-                  && detail.SanadType != 7
-                  && detail.SanadType != 15
                   && detail.SanadType != 16
                   && detail.SanadType != 19
             select (double?)(detail.Bed2 - detail.Bes2))
