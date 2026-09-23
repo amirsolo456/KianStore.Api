@@ -150,7 +150,9 @@ public sealed class StockTransferService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = _context.Sanads.AsNoTracking()
-            .Where(x => x.SanadType == SourceTransferType && !x.Disable);
+            .Where(x => x.SanadType == SourceTransferType &&
+                        !x.Disable &&
+                        !(x.Des != null && x.Des.StartsWith("ابطال سند انتقال")));
 
         if (idSal > 0)
             query = query.Where(x => x.IdSal == idSal);
@@ -251,6 +253,293 @@ public sealed class StockTransferService
             "تاریخچه انتقال بین انبارها با موفقیت دریافت شد.");
     }
 
+
+    private static List<StockTransferItemRequest> NormalizeTransferItems(
+        IEnumerable<StockTransferItemRequest> source)
+        => source
+            .Where(x => !string.IsNullOrWhiteSpace(x.IdKala))
+            .GroupBy(x => x.IdKala.Trim(), StringComparer.Ordinal)
+            .Select(g => new StockTransferItemRequest
+            {
+                IdKala = g.Key,
+                Quantity = g.Sum(x => x.Quantity)
+            })
+            .Where(x => x.Quantity > 0)
+            .ToList();
+
+    private async Task<LoadedTransfer> LoadActiveTransferAsync(
+        int idSal,
+        string id,
+        CancellationToken ct)
+    {
+        var source = await _context.Sanads.AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.IdSal == idSal &&
+                     x.Id == id &&
+                     x.SanadType == SourceTransferType &&
+                     !x.Disable,
+                ct);
+
+        if (source == null)
+            throw new ApiException(404, "TRANSFER_NOT_FOUND", "سند انتقال مورد نظر پیدا نشد یا قبلاً حذف شده است.");
+
+        var destinationId = GetRelatedSanadId(source.Id);
+        var destination = await _context.Sanads.AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.IdSal == idSal &&
+                     x.Id == destinationId &&
+                     x.SanadType == DestinationTransferType &&
+                     !x.Disable,
+                ct);
+
+        if (destination == null)
+            throw new ApiException(409, "TRANSFER_PAIR_MISSING", "سند مقصد متناظر برای سند انتقال پیدا نشد.");
+
+        var details = await _context.SanadDetails.AsNoTracking()
+            .Where(x => x.IdSal == idSal &&
+                        x.IdSanad == source.Id &&
+                        x.SanadType == SourceTransferType)
+            .ToListAsync(ct);
+
+        var items = details
+            .GroupBy(x => x.IdKala, StringComparer.Ordinal)
+            .Select(g => new StockTransferItemRequest
+            {
+                IdKala = g.Key,
+                Quantity = (decimal)g.Sum(x => x.Bes2 > 0 ? x.Bes2 : x.Bes)
+            })
+            .Where(x => x.Quantity > 0)
+            .ToList();
+
+        if (items.Count == 0)
+            throw new ApiException(409, "TRANSFER_DETAILS_MISSING", "اقلام سند انتقال پیدا نشد.");
+
+        return new LoadedTransfer(source, destination, items);
+    }
+
+    private async Task<StockTransferResponse> ReverseAndDisableTransferAsync(
+        Sanad source,
+        Sanad destination,
+        IReadOnlyList<StockTransferItemRequest> items,
+        CancellationToken ct)
+    {
+        var reverse = await ApplyTransferMovementAsync(
+            source.IdSal,
+            destination.IdAnbar,
+            source.IdAnbar,
+            source.SabtDate,
+            $"ابطال سند انتقال {source.IdFaktor}",
+            items,
+            description: $"ابطال سند انتقال {source.IdFaktor}",
+            ct);
+
+        await DisableTransferHeadersAsync(
+            source.IdSal,
+            source.Id,
+            destination.Id,
+            ct);
+
+        return reverse;
+    }
+
+    private async Task DisableTransferHeadersAsync(
+        int idSal,
+        string sourceId,
+        string destinationId,
+        CancellationToken ct)
+    {
+        const string sql = @"
+UPDATE dbo.Sanad
+SET Disable = 1,
+    IsFinal = 0,
+    IsSavedFinal = 0,
+    ShowInSanad = 0,
+    ShowInFaktor = 0
+WHERE IdSal = @IdSal
+  AND Id IN (@SourceId, @DestinationId);";
+
+        await using var command = _context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = sql;
+        command.CommandType = CommandType.Text;
+        command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
+
+        AddParameter(command, "@IdSal", DbType.Int32, idSal);
+        AddParameter(command, "@SourceId", DbType.AnsiString, sourceId);
+        AddParameter(command, "@DestinationId", DbType.AnsiString, destinationId);
+
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task<StockTransferResponse> ApplyTransferMovementAsync(
+        int idSal,
+        int sourceAnbarId,
+        int destinationAnbarId,
+        string sabtDate,
+        string? note,
+        IReadOnlyList<StockTransferItemRequest> items,
+        string? description,
+        CancellationToken ct)
+    {
+        if (sourceAnbarId <= 0 || destinationAnbarId <= 0 ||
+            sourceAnbarId == destinationAnbarId)
+            throw new ApiException(400, "INVALID_WAREHOUSE", "انبار مبدأ و مقصد را به‌درستی انتخاب کنید.");
+
+        var warehouses = await _context.Anbars.AsNoTracking()
+            .Where(x => x.Id == sourceAnbarId || x.Id == destinationAnbarId)
+            .ToListAsync(ct);
+
+        if (warehouses.Count != 2)
+            throw new ApiException(404, "WAREHOUSE_NOT_FOUND", "انبار مبدأ یا مقصد پیدا نشد.");
+
+        var productIds = items.Select(x => x.IdKala).ToList();
+        var products = await _context.Kalas.AsNoTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
+
+        var neutralTarafExists = await _context.Tarafs.AsNoTracking()
+            .AnyAsync(x => x.Id == 0 && x.IdType == 2, ct);
+
+        var neutralUserId = await _context.Users.AsNoTracking()
+            .Where(x => x.Id > 0)
+            .OrderBy(x => x.Id)
+            .Select(x => (int?)x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (!neutralTarafExists || !neutralUserId.HasValue)
+            throw new ApiException(
+                409,
+                "TRANSFER_REFERENCE_DATA_MISSING",
+                "رکوردهای پایه لازم برای ثبت سند انتقال موجود نیستند.");
+
+        var nativeProcedureExists = await _context.Database
+            .SqlQueryRaw<int>("SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.InsertTwoSanadRelated') AND type = 'P') THEN 1 ELSE 0 END AS [Value]")
+            .SingleAsync(ct);
+
+        if (nativeProcedureExists != 1)
+            throw new ApiException(
+                409,
+                "TRANSFER_PROCEDURE_MISSING",
+                "Procedure اصلی انتقال انبار در دیتابیس پیدا نشد.");
+
+        var defaultCheckDefExists = await _context.CheckDefs.AsNoTracking()
+            .AnyAsync(x => x.Id == 1 && x.Type == 1, ct);
+
+        if (!defaultCheckDefExists)
+            throw new ApiException(
+                409,
+                "TRANSFER_CHECKDEF_MISSING",
+                "حساب پیش‌فرض انتقال در دیتابیس وجود ندارد.");
+
+        var sourceStocks = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        var destinationStocks = new Dictionary<string, decimal>(StringComparer.Ordinal);
+
+        foreach (var item in items)
+        {
+            if (!products.TryGetValue(item.IdKala, out var product) || product.IsDisabled)
+                throw new ApiException(404, "PRODUCT_NOT_FOUND", $"کالا با کد {item.IdKala} پیدا نشد.");
+
+            var sourceStock = await CalculateStockFromDocumentsAsync(
+                item.IdKala, sourceAnbarId, idSal, ct);
+
+            if (sourceStock < item.Quantity)
+                throw new ApiException(
+                    409,
+                    "INSUFFICIENT_STOCK",
+                    $"موجودی «{product.KalaName}» در انبار مبدأ کافی نیست. موجودی: {sourceStock}، درخواست: {item.Quantity}.");
+
+            sourceStocks[item.IdKala] = sourceStock;
+            destinationStocks[item.IdKala] = await CalculateStockFromDocumentsAsync(
+                item.IdKala, destinationAnbarId, idSal, ct);
+        }
+
+        var sanadId = await GenerateSanadIdAsync(idSal, ct);
+        var secondSanadId = GetRelatedSanadId(sanadId);
+
+        await InsertNativeTransferHeadersAsync(
+            idSal,
+            sanadId,
+            secondSanadId,
+            sourceAnbarId,
+            destinationAnbarId,
+            sabtDate,
+            neutralUserId.Value,
+            note,
+            description,
+            ct);
+
+        var nativeHeaders = await _context.Sanads.AsNoTracking()
+            .Where(x => x.IdSal == idSal && (x.Id == sanadId || x.Id == secondSanadId))
+            .Select(x => new { x.Id, x.SanadType, x.IdAnbar })
+            .ToListAsync(ct);
+
+        var sourceHeader = nativeHeaders.FirstOrDefault(x => x.Id == sanadId);
+        var destinationHeader = nativeHeaders.FirstOrDefault(x => x.Id == secondSanadId);
+
+        if (sourceHeader == null || destinationHeader == null ||
+            sourceHeader.SanadType != SourceTransferType ||
+            destinationHeader.SanadType != DestinationTransferType ||
+            sourceHeader.IdAnbar != sourceAnbarId ||
+            destinationHeader.IdAnbar != destinationAnbarId)
+        {
+            throw new ApiException(
+                409,
+                "TRANSFER_NATIVE_HEADER_INVALID",
+                "سندهای انتقال داخلی مطابق انبارهای مبدأ و مقصد ایجاد نشدند.");
+        }
+
+        var details = new List<SanadDetail>();
+        var row = 1;
+        foreach (var item in items)
+        {
+            var product = products[item.IdKala];
+            var qty = (double)item.Quantity;
+
+            details.Add(CreateDetail(
+                idSal, sanadId, row++, product, sourceAnbarId,
+                bed: 0, bes: qty, sanadType: SourceTransferType));
+
+            details.Add(CreateDetail(
+                idSal, secondSanadId, row++, product, destinationAnbarId,
+                bed: qty, bes: 0, sanadType: DestinationTransferType));
+        }
+
+        await InsertTransferDetailsAsync(details, ct);
+
+        foreach (var item in items)
+        {
+            await SetCachedStockAsync(
+                item.IdKala,
+                sourceAnbarId,
+                sourceStocks[item.IdKala] - item.Quantity,
+                products[item.IdKala],
+                ct);
+
+            await SetCachedStockAsync(
+                item.IdKala,
+                destinationAnbarId,
+                destinationStocks[item.IdKala] + item.Quantity,
+                products[item.IdKala],
+                ct);
+        }
+
+        return new StockTransferResponse
+        {
+            IdSal = idSal,
+            Id = sanadId,
+            SourceAnbarId = sourceAnbarId,
+            DestinationAnbarId = destinationAnbarId,
+            ItemCount = items.Count,
+            Message = string.IsNullOrWhiteSpace(description)
+                ? $"انتقال موجودی با موفقیت ثبت شد. سند مبدأ: {sanadId}، سند مقصد: {secondSanadId}."
+                : $"عملیات معکوس انتقال با موفقیت ثبت شد. سند: {sanadId}."
+        };
+    }
+
+    private sealed record LoadedTransfer(
+        Sanad Source,
+        Sanad Destination,
+        List<StockTransferItemRequest> Items);
+
     public async Task<ApiResponse<StockTransferResponse>> CreateAsync(
         StockTransferRequest request,
         CancellationToken ct)
@@ -263,16 +552,7 @@ public sealed class StockTransferService
         if (string.IsNullOrWhiteSpace(request.SabtDate) || request.SabtDate.Length != 10)
             throw new ApiException(400, "INVALID_DATE", "تاریخ سند باید به صورت yyyy/MM/dd باشد.");
 
-        var items = request.Items
-            .Where(x => !string.IsNullOrWhiteSpace(x.IdKala))
-            .GroupBy(x => x.IdKala.Trim(), StringComparer.Ordinal)
-            .Select(g => new StockTransferItemRequest
-            {
-                IdKala = g.Key,
-                Quantity = g.Sum(x => x.Quantity)
-            })
-            .Where(x => x.Quantity > 0)
-            .ToList();
+        var items = NormalizeTransferItems(request.Items);
 
         if (items.Count == 0)
             throw new ApiException(400, "EMPTY_TRANSFER", "حداقل یک کالا برای انتقال انتخاب کنید.");
@@ -382,6 +662,7 @@ public sealed class StockTransferService
                 request.SabtDate,
                 neutralUserId.Value,
                 request.Note,
+                description: null,
                 ct);
 
             var nativeHeaders = await _context.Sanads.AsNoTracking()
@@ -615,6 +896,7 @@ VALUES
         string sabtDate,
         int responsibleUserId,
         string? note,
+        string? description,
         CancellationToken ct)
     {
         await using var command = _context.Database.GetDbConnection().CreateCommand();
@@ -632,8 +914,11 @@ VALUES
         AddParameter(command, "@IDTarafType", DbType.Int32, 2);
         AddParameter(command, "@SabtDate", DbType.AnsiString, sabtDate);
         AddParameter(command, "@IDMasool", DbType.Int32, responsibleUserId);
-        AddParameter(command, "@Des1", DbType.AnsiString, "انتقال موجودی بین انبارها");
-        AddParameter(command, "@Des2", DbType.AnsiString, "انتقال موجودی بین انبارها");
+        var documentDescription = string.IsNullOrWhiteSpace(description)
+            ? "انتقال موجودی بین انبارها"
+            : description.Trim();
+        AddParameter(command, "@Des1", DbType.AnsiString, documentDescription);
+        AddParameter(command, "@Des2", DbType.AnsiString, documentDescription);
         AddParameter(command, "@TarafName2", DbType.AnsiString, string.Empty);
         AddParameter(command, "@Sharh1", DbType.AnsiString, note ?? string.Empty);
         AddParameter(command, "@Sharh2", DbType.AnsiString, note ?? string.Empty);
