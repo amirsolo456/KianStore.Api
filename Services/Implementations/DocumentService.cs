@@ -106,10 +106,10 @@ public sealed class DocumentService : IDocumentService
                     Maliat = 0, Maliat1 = false, Maliat2 = false, TakhfifDarsad = 0, PorsantDarsad = 0, HazKala = 0,
                     HazKalaKharid = 0, IdSanjesh = product.IdSanjesh, IdSanjesh2 = product.IdSanjesh2, BedBesZarib = 1,
                     SanadType = request.SanadType, PropKala = null, PropKala2 = null, Des1 = null, Des2 = null, Des3 = null,
-                    SumBed = null, SumBes = null, HazKala2 = null, HazKala3 = null, SumTakhfifKala = 0, HazKala1 = null,
+                    SumBed = null, SumBes = null, HazKala2 = null, HazKala3 = null, HazKala1 = null,
                     HazKalaGift1 = null, HazKalaGift2 = null, HazKalaGift3 = null, IdAttribValuesStock = string.Empty,
                     TakhfifD2 = null, TakhfifD3 = null, TakhfifMab1 = null, TakhfifMab2 = null, MaliatD1 = null, MaliatD2 = null,
-                    TasviehRoz = null, MaliatMab1 = null, MaliatMab2 = null, SumMabTakh = null, SumMabMaliat = null,
+                    TasviehRoz = null, MaliatMab1 = null, MaliatMab2 = null, SumMabMaliat = null,
                     MabFroshByTakh = null, Bed2 = item.IsIncoming ? (double)item.Quantity : 0, Bes2 = item.IsIncoming ? 0 : (double)item.Quantity,
                     BedMab2 = item.IsIncoming ? unitPrice : 0, BesMab2 = item.IsIncoming ? 0 : unitPrice, MabEzafatMoaf = null
                 });
