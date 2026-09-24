@@ -78,6 +78,14 @@ public sealed class SetStockTransferBookmarkRequest
     public bool IsBookmarked { get; init; }
 }
 
+public sealed class StockTransferBookmarkResponse
+{
+    public int IdSal { get; init; }
+    public string Id { get; init; } = string.Empty;
+    public bool IsBookmarked { get; init; }
+    public string Message { get; init; } = string.Empty;
+}
+
 
 public sealed class StockTransferProductWarehouseInventoryResponse
 {
