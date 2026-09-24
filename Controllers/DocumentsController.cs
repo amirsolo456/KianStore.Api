@@ -129,6 +129,51 @@ public sealed class DocumentsController : ControllerBase
     public async Task<IActionResult> History([FromQuery] int idSal, [FromQuery] int sanadType, [FromQuery] int page = 1, [FromQuery] int pageSize = 30, CancellationToken cancellationToken = default)
         => Ok(await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, cancellationToken));
 
+    [HttpPut("{idSal:int}/{id}/bookmark")]
+    public async Task<IActionResult> SetBookmark(
+        int idSal,
+        string id,
+        [FromBody] DocumentBookmarkRequest request,
+        CancellationToken cancellationToken)
+    {
+        var sanad = await _context.Sanads
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.IdSal == idSal && x.Id == id && !x.Disable,
+                cancellationToken);
+
+        if (sanad == null)
+            return NotFound(ApiResponse<DocumentBookmarkResponse>.ErrorResult(
+                "DOCUMENT_NOT_FOUND",
+                "سند مورد نظر یافت نشد یا غیرفعال است."));
+
+        var affected = await _context.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE dbo.Sanad
+SET IsBookmarked = {request.IsBookmarked}
+WHERE IdSal = {idSal}
+  AND Id = {id}
+  AND Disable = 0;", cancellationToken);
+
+        if (affected == 0)
+            return NotFound(ApiResponse<DocumentBookmarkResponse>.ErrorResult(
+                "DOCUMENT_NOT_FOUND",
+                "سند مورد نظر یافت نشد یا غیرفعال است."));
+
+        return Ok(ApiResponse<DocumentBookmarkResponse>.SuccessResult(
+            new DocumentBookmarkResponse
+            {
+                IdSal = idSal,
+                Id = id,
+                IsBookmarked = request.IsBookmarked,
+                Message = request.IsBookmarked
+                    ? "سند نشان شد."
+                    : "نشان سند برداشته شد."
+            },
+            request.IsBookmarked
+                ? "سند با موفقیت نشان شد."
+                : "نشان سند با موفقیت برداشته شد."));
+    }
+
     [HttpGet("{idSal:int}/{id}")]
     public async Task<IActionResult> Get(int idSal, string id, CancellationToken cancellationToken)
         => Ok(await _documentService.GetAsync(idSal, id, cancellationToken));
