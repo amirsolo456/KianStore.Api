@@ -212,7 +212,7 @@ public sealed class StockTransferService
             .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
 
         var bookmarkStates = await LoadBookmarkStatesAsync(
-            sourceHeaders.Select(x => new { x.IdSal, x.Id }),
+            sourceHeaders.Select(x => (x.IdSal, x.Id)),
             ct);
 
         var detailLookup = sourceDetails.ToLookup(x => x.IdSal + "|" + x.IdSanad);
@@ -304,17 +304,11 @@ VALUES
     }
 
     private async Task<Dictionary<string, bool>> LoadBookmarkStatesAsync(
-        IEnumerable<object> documents,
+        IEnumerable<(int IdSal, string Id)> documents,
         CancellationToken ct)
     {
         var keys = documents
-            .Select(x =>
-            {
-                var type = x.GetType();
-                var sal = (int)type.GetProperty("IdSal")!.GetValue(x)!;
-                var id = (string)type.GetProperty("Id")!.GetValue(x)!;
-                return new { Sal = sal, Id = id };
-            })
+            .Select(x => new { Sal = x.IdSal, Id = x.Id })
             .ToList();
 
         if (keys.Count == 0)
