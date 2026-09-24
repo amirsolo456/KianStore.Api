@@ -230,7 +230,7 @@ public sealed class DocumentService : IDocumentService
             IdSal = sanad.IdSal, Id = sanad.Id, SanadType = sanad.SanadType, IdAnbar = sanad.IdAnbar, IdTaraf = sanad.IdTaraf,
             IdTarafType = sanad.IdTarafType, IdFaktor = sanad.IdFaktor, SabtDate = sanad.SabtDate, TotalAmount = sanad.MabKol,
             DiscountAmount = sanad.Takhfif,
-            IsFinal = sanad.IsFinal, Description = sanad.Des, TarafName = tarafName,
+            IsFinal = sanad.IsFinal, IsBookmarked = sanad.IsBookmarked, Description = sanad.Des, TarafName = tarafName,
             PurchaseEmployeeId = isPurchase ? sanad.IdMasool : null,
             PurchaseEmployeeName = isPurchase ? purchaseEmployeeName : null,
             SmsStatus = smsStatus,
