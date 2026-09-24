@@ -58,31 +58,6 @@ public sealed class StockTransfersController : ControllerBase
         CancellationToken ct)
         => StatusCode(201, await _service.CreateAsync(request, ct));
 
-    [HttpPut("{idSal:int}/{id}/bookmark")]
-    public async Task<IActionResult> Bookmark(
-        int idSal,
-        string id,
-        CancellationToken ct)
-        => Ok(await _service.SetBookmarkAsync(
-            idSal,
-            id,
-            bookmarked: true,
-            currentUserId: GetCurrentUserId(),
-            ct));
-
-    [HttpDelete("{idSal:int}/{id}/bookmark")]
-    public async Task<IActionResult> Unbookmark(
-        int idSal,
-        string id,
-        CancellationToken ct)
-        => Ok(await _service.SetBookmarkAsync(
-            idSal,
-            id,
-            bookmarked: false,
-            currentUserId: GetCurrentUserId(),
-            ct));
-
-
     [HttpPut("{idSal:int}/{id}")]
     public async Task<IActionResult> Update(
         [FromRoute] int idSal,
@@ -97,13 +72,4 @@ public sealed class StockTransfersController : ControllerBase
         [FromRoute] string id,
         CancellationToken ct)
         => Ok(await _service.DeleteAsync(idSal, id, ct));
-
-    private int? GetCurrentUserId()
-    {
-        if (Request.Headers.TryGetValue("X-User-Id", out var raw) &&
-            int.TryParse(raw.FirstOrDefault(), out var userId) &&
-            userId > 0)
-            return userId;
-        return null;
-    }
 }

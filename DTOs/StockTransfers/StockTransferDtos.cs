@@ -69,7 +69,6 @@ public sealed class StockTransferHistoryResponse
     public int DestinationAnbarId { get; init; }
     public string DestinationAnbarName { get; init; } = string.Empty;
     public int ItemCount { get; init; }
-    public bool IsBookmarked { get; init; }
     public List<StockTransferHistoryItemResponse> Items { get; init; } = [];
 }
 
@@ -79,12 +78,4 @@ public sealed class StockTransferProductWarehouseInventoryResponse
     public int IdAnbar { get; init; }
     public string AnbarName { get; init; } = string.Empty;
     public decimal Stock { get; init; }
-}
-
-
-public sealed class StockTransferBookmarkState
-{
-    public int IdSal { get; init; }
-    public string IdSanad { get; init; } = string.Empty;
-    public bool IsBookmarked { get; init; }
 }

@@ -211,10 +211,6 @@ public sealed class StockTransferService
             .Where(x => warehouseIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
 
-        var bookmarkStates = await LoadBookmarkStatesAsync(
-            sourceHeaders.Select(x => (x.IdSal, x.Id)),
-            ct);
-
         var detailLookup = sourceDetails.ToLookup(x => x.IdSal + "|" + x.IdSanad);
 
         var result = new List<StockTransferHistoryResponse>(sourceHeaders.Count);
@@ -248,7 +244,6 @@ public sealed class StockTransferService
                     ? "—"
                     : (warehouseNames.TryGetValue(destination.IdAnbar, out var destinationName) ? destinationName : $"انبار {destination.IdAnbar}"),
                 ItemCount = items.Count,
-                IsBookmarked = bookmarkStates.TryGetValue(source.IdSal + "|" + source.Id, out var isBookmarked) && isBookmarked,
                 Items = items
             });
         }
@@ -258,96 +253,6 @@ public sealed class StockTransferService
             "تاریخچه انتقال بین انبارها با موفقیت دریافت شد.");
     }
 
-
-    public async Task<ApiResponse<object>> SetBookmarkAsync(
-        int idSal,
-        string id,
-        bool bookmarked,
-        int? currentUserId,
-        CancellationToken ct)
-    {
-        if (idSal <= 0 || string.IsNullOrWhiteSpace(id))
-            throw new ApiException(400, "INVALID_TRANSFER", "شناسه سند انتقال معتبر نیست.");
-
-        var exists = await _context.Sanads.AsNoTracking()
-            .AnyAsync(
-                x => x.IdSal == idSal &&
-                     x.Id == id &&
-                     x.SanadType == SourceTransferType &&
-                     !x.Disable,
-                ct);
-
-        if (!exists)
-            throw new ApiException(404, "TRANSFER_NOT_FOUND", "سند انتقال مورد نظر پیدا نشد.");
-
-        const string insertSql = @"
-INSERT INTO dbo.SanadChangeLog
-    (IdSal, IdSanad, SanadType, [Action], UserId, ChangedAt, [Description])
-VALUES
-    (@IdSal, @IdSanad, @SanadType, @Action, @UserId, SYSUTCDATETIME(), @Description);";
-
-        await _context.Database.ExecuteSqlRawAsync(
-            insertSql,
-            new Microsoft.Data.SqlClient.SqlParameter("@IdSal", idSal),
-            new Microsoft.Data.SqlClient.SqlParameter("@IdSanad", id),
-            new Microsoft.Data.SqlClient.SqlParameter("@SanadType", SourceTransferType),
-            new Microsoft.Data.SqlClient.SqlParameter("@Action", bookmarked ? "BOOKMARK" : "UNBOOKMARK"),
-            new Microsoft.Data.SqlClient.SqlParameter("@UserId", (object?)currentUserId ?? DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter(
-                "@Description",
-                bookmarked ? "سند توسط کاربر نشان شد." : "نشان سند برداشته شد."),
-            ct);
-
-        return ApiResponse<object>.SuccessResult(
-            new { idSal, idSanad = id, isBookmarked = bookmarked },
-            bookmarked ? "سند نشان شد." : "نشان سند برداشته شد.");
-    }
-
-    private async Task<Dictionary<string, bool>> LoadBookmarkStatesAsync(
-        IEnumerable<(int IdSal, string Id)> documents,
-        CancellationToken ct)
-    {
-        var keys = documents
-            .Select(x => new { Sal = x.IdSal, Id = x.Id })
-            .ToList();
-
-        if (keys.Count == 0)
-            return new Dictionary<string, bool>(StringComparer.Ordinal);
-
-        var result = new Dictionary<string, bool>(StringComparer.Ordinal);
-        var connection = _context.Database.GetDbConnection();
-        var shouldClose = connection.State != ConnectionState.Open;
-        if (shouldClose) await connection.OpenAsync(ct);
-
-        try
-        {
-            foreach (var key in keys)
-            {
-                await using var command = connection.CreateCommand();
-                command.CommandText = @"
-SELECT TOP (1) [Action]
-FROM dbo.SanadChangeLog
-WHERE IdSal = @IdSal
-  AND IdSanad = @IdSanad
-  AND SanadType = @SanadType
-  AND [Action] IN ('BOOKMARK','UNBOOKMARK')
-ORDER BY ChangedAt DESC, Id DESC;";
-                AddParameter(command, "@IdSal", DbType.Int32, key.Sal);
-                AddParameter(command, "@IdSanad", DbType.AnsiString, key.Id);
-                AddParameter(command, "@SanadType", DbType.Int32, SourceTransferType);
-                var value = await command.ExecuteScalarAsync(ct);
-                if (value != null && value != DBNull.Value)
-                    result[key.Sal + "|" + key.Id] =
-                        string.Equals(value.ToString(), "BOOKMARK", StringComparison.OrdinalIgnoreCase);
-            }
-        }
-        finally
-        {
-            if (shouldClose) await connection.CloseAsync();
-        }
-
-        return result;
-    }
 
     private static List<StockTransferItemRequest> NormalizeTransferItems(
         IEnumerable<StockTransferItemRequest> source)
