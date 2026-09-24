@@ -268,25 +268,14 @@ public sealed class StockTransferService
         if (idSal <= 0 || string.IsNullOrWhiteSpace(id))
             throw new ApiException(400, "INVALID_SANAD", "سال مالی یا شماره سند معتبر نیست.");
 
-        var sql = @"
+        var affected = await _context.Database.ExecuteSqlInterpolatedAsync($@"
 UPDATE dbo.Sanad
-SET IsBookmarked = @IsBookmarked
-WHERE IdSal = @IdSal
-  AND Id = @Id
-  AND SanadType = @SanadType
-  AND Disable = 0;";
+SET IsBookmarked = {isBookmarked}
+WHERE IdSal = {idSal}
+  AND Id = {id}
+  AND SanadType = {SourceTransferType}
+  AND Disable = 0;", ct);
 
-        await using var command = _context.Database.GetDbConnection().CreateCommand();
-        command.CommandText = sql;
-        command.CommandType = CommandType.Text;
-        command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
-
-        AddParameter(command, "@IsBookmarked", DbType.Boolean, isBookmarked);
-        AddParameter(command, "@IdSal", DbType.Int32, idSal);
-        AddParameter(command, "@Id", DbType.AnsiString, id);
-        AddParameter(command, "@SanadType", DbType.Int32, SourceTransferType);
-
-        var affected = await command.ExecuteNonQueryAsync(ct);
         if (affected == 0)
             throw new ApiException(404, "TRANSFER_NOT_FOUND", "سند انتقال مورد نظر پیدا نشد یا غیرفعال است.");
 
