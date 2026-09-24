@@ -128,6 +128,15 @@ BEGIN
     END;
 END;
 
+IF OBJECT_ID(N'dbo.Sanad', N'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo.Sanad', N'IsBookmarked') IS NULL
+BEGIN
+    ALTER TABLE dbo.Sanad
+        ADD IsBookmarked bit NOT NULL
+            CONSTRAINT DF_Sanad_IsBookmarked DEFAULT ((0))
+            WITH VALUES;
+END;
+
 IF OBJECT_ID(N'dbo.DiscountCode', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.DiscountCode (Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_DiscountCode PRIMARY KEY, Code varchar(50) NOT NULL, Title nvarchar(200) NULL, TakhfifId int NOT NULL, Type int NOT NULL CONSTRAINT DF_DiscountCode_Type DEFAULT ((1)), Scope int NOT NULL CONSTRAINT DF_DiscountCode_Scope DEFAULT ((1)), PersonId int NULL, IssuedForIdSal int NULL, IssuedForIdSanad varchar(10) NULL, Value decimal(18,3) NOT NULL, MaxDiscountAmount decimal(18,3) NULL, StartDate datetime2(0) NOT NULL, EndDate datetime2(0) NULL, UsageLimit int NULL, UsedCount int NOT NULL CONSTRAINT DF_DiscountCode_UsedCount DEFAULT ((0)), PerCustomerLimit int NULL, IsActive bit NOT NULL CONSTRAINT DF_DiscountCode_IsActive DEFAULT ((1)), Description nvarchar(1000) NULL, CreatedAt datetime2(0) NOT NULL CONSTRAINT DF_DiscountCode_CreatedAt DEFAULT (SYSUTCDATETIME()), CONSTRAINT UQ_DiscountCode_Code UNIQUE (Code), CONSTRAINT FK_DiscountCode_Takhfif FOREIGN KEY (TakhfifId) REFERENCES dbo.Takhfif(ID));
