@@ -15,6 +15,7 @@ public sealed class DocumentResponse
     public decimal TotalAmount { get; init; }
     public decimal DiscountAmount { get; init; }
     public bool IsFinal { get; init; }
+    public bool IsBookmarked { get; init; }
     public string? Description { get; init; }
     public string? TarafName { get; init; }
     public int? PurchaseEmployeeId { get; init; }
@@ -25,6 +26,19 @@ public sealed class DocumentResponse
     public string? IssuedNextPurchaseDiscountCode { get; init; }
     public bool NextPurchaseSmsSent { get; init; }
     public List<DocumentItemResponse> Items { get; init; } = new();
+}
+
+public sealed class DocumentBookmarkRequest
+{
+    public bool IsBookmarked { get; init; }
+}
+
+public sealed class DocumentBookmarkResponse
+{
+    public int IdSal { get; init; }
+    public string Id { get; init; } = null!;
+    public bool IsBookmarked { get; init; }
+    public string Message { get; init; } = string.Empty;
 }
 
 public sealed class DocumentItemResponse
