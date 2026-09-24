@@ -162,12 +162,13 @@ public sealed class DocumentService : IDocumentService
         return ApiResponse<DocumentResponse>.SuccessResult(Map(sanad, details, tarafName, purchaseEmployeeName));
     }
 
-    public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(int idSal, int sanadType = 12, int page = 1, int pageSize = 30, CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<IReadOnlyList<DocumentResponse>>> GetHistoryAsync(int idSal, int sanadType = 12, int page = 1, int pageSize = 30, bool bookmarkedOnly = false, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var sanadsQuery = _context.Sanads.AsNoTracking().Where(x => x.SanadType == sanadType && !x.Disable);
         if (idSal > 0) sanadsQuery = sanadsQuery.Where(x => x.IdSal == idSal);
+        if (bookmarkedOnly) sanadsQuery = sanadsQuery.Where(x => x.IsBookmarked);
         var sanads = await sanadsQuery.OrderByDescending(x => x.IdSal).ThenByDescending(x => x.IdFaktor).ThenByDescending(x => x.Id).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
         if (sanads.Count == 0) return ApiResponse<IReadOnlyList<DocumentResponse>>.SuccessResult(Array.Empty<DocumentResponse>(), "تاریخچه فروش خالی است.");
         var sanadIds = sanads.Select(x => x.Id).ToList();
