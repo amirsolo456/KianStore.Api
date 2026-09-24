@@ -19,5 +19,6 @@ public interface IDocumentService
         int sanadType = 12,
         int page = 1,
         int pageSize = 30,
+        bool bookmarkedOnly = false,
         CancellationToken cancellationToken = default);
 }
