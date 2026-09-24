@@ -126,8 +126,14 @@ public sealed class DocumentsController : ControllerBase
     }
 
     [HttpGet("history")]
-    public async Task<IActionResult> History([FromQuery] int idSal, [FromQuery] int sanadType, [FromQuery] int page = 1, [FromQuery] int pageSize = 30, CancellationToken cancellationToken = default)
-        => Ok(await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, cancellationToken));
+    public async Task<IActionResult> History(
+        [FromQuery] int idSal,
+        [FromQuery] int sanadType,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 30,
+        [FromQuery] bool bookmarkedOnly = false,
+        CancellationToken cancellationToken = default)
+        => Ok(await _documentService.GetHistoryAsync(idSal, sanadType, page, pageSize, bookmarkedOnly, cancellationToken));
 
     [HttpPut("{idSal:int}/{id}/bookmark")]
     public async Task<IActionResult> SetBookmark(
