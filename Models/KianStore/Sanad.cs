@@ -45,6 +45,7 @@ public class Sanad
     public bool IsTasvieh { get; set; }
     public int TasviehID { get; set; }
     public bool Disable { get; set; }
+    public bool IsBookmarked { get; set; }
     public int IDSanadEx { get; set; }
     public int IDSanadEx2 { get; set; }
     public int IDSanadEx3 { get; set; }
