@@ -49,8 +49,17 @@ public sealed class StockTransfersController : ControllerBase
         [FromQuery] int idSal = 1405,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] bool bookmarkedOnly = false,
         CancellationToken ct = default)
-        => Ok(await _service.GetHistoryAsync(idSal, page, pageSize, ct));
+        => Ok(await _service.GetHistoryAsync(idSal, page, pageSize, bookmarkedOnly, ct));
+
+    [HttpPut("{idSal:int}/{id}/bookmark")]
+    public async Task<IActionResult> SetBookmark(
+        [FromRoute] int idSal,
+        [FromRoute] string id,
+        [FromBody] SetStockTransferBookmarkRequest request,
+        CancellationToken ct)
+        => Ok(await _service.SetBookmarkAsync(idSal, id, request.IsBookmarked, ct));
 
     [HttpPost]
     public async Task<IActionResult> Create(
