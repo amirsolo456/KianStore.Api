@@ -61,6 +61,7 @@ public sealed class StockTransferHistoryResponse
 {
     public int IdSal { get; init; }
     public string Id { get; init; } = string.Empty;
+    public bool IsBookmarked { get; init; }
     public int IdFaktor { get; init; }
     public string SabtDate { get; init; } = string.Empty;
     public string? Note { get; init; }
@@ -70,6 +71,11 @@ public sealed class StockTransferHistoryResponse
     public string DestinationAnbarName { get; init; } = string.Empty;
     public int ItemCount { get; init; }
     public List<StockTransferHistoryItemResponse> Items { get; init; } = [];
+}
+
+public sealed class SetStockTransferBookmarkRequest
+{
+    public bool IsBookmarked { get; init; }
 }
 
 
