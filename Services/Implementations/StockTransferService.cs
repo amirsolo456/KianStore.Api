@@ -144,6 +144,7 @@ public sealed class StockTransferService
         int idSal,
         int page,
         int pageSize,
+        bool bookmarkedOnly,
         CancellationToken ct)
     {
         page = Math.Max(1, page);
@@ -156,6 +157,9 @@ public sealed class StockTransferService
 
         if (idSal > 0)
             query = query.Where(x => x.IdSal == idSal);
+
+        if (bookmarkedOnly)
+            query = query.Where(x => x.IsBookmarked);
 
         var sourceHeaders = await query
             .OrderByDescending(x => x.IdSal)
@@ -234,6 +238,7 @@ public sealed class StockTransferService
             {
                 IdSal = source.IdSal,
                 Id = source.Id,
+                IsBookmarked = source.IsBookmarked,
                 IdFaktor = source.IdFaktor,
                 SabtDate = source.SabtDate,
                 Note = string.IsNullOrWhiteSpace(source.Sharh) ? source.Des : source.Sharh,
@@ -253,6 +258,52 @@ public sealed class StockTransferService
             "تاریخچه انتقال بین انبارها با موفقیت دریافت شد.");
     }
 
+
+    public async Task<ApiResponse<StockTransferBookmarkResponse>> SetBookmarkAsync(
+        int idSal,
+        string id,
+        bool isBookmarked,
+        CancellationToken ct)
+    {
+        if (idSal <= 0 || string.IsNullOrWhiteSpace(id))
+            throw new ApiException(400, "INVALID_SANAD", "سال مالی یا شماره سند معتبر نیست.");
+
+        var sql = @"
+UPDATE dbo.Sanad
+SET IsBookmarked = @IsBookmarked
+WHERE IdSal = @IdSal
+  AND Id = @Id
+  AND SanadType = @SanadType
+  AND Disable = 0;";
+
+        await using var command = _context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = sql;
+        command.CommandType = CommandType.Text;
+        command.Transaction = _context.Database.CurrentTransaction?.GetDbTransaction();
+
+        AddParameter(command, "@IsBookmarked", DbType.Boolean, isBookmarked);
+        AddParameter(command, "@IdSal", DbType.Int32, idSal);
+        AddParameter(command, "@Id", DbType.AnsiString, id);
+        AddParameter(command, "@SanadType", DbType.Int32, SourceTransferType);
+
+        var affected = await command.ExecuteNonQueryAsync(ct);
+        if (affected == 0)
+            throw new ApiException(404, "TRANSFER_NOT_FOUND", "سند انتقال مورد نظر پیدا نشد یا غیرفعال است.");
+
+        return ApiResponse<StockTransferBookmarkResponse>.SuccessResult(
+            new StockTransferBookmarkResponse
+            {
+                IdSal = idSal,
+                Id = id,
+                IsBookmarked = isBookmarked,
+                Message = isBookmarked
+                    ? "سند انتقال نشان شد."
+                    : "نشان سند انتقال برداشته شد."
+            },
+            isBookmarked
+                ? "سند انتقال با موفقیت نشان شد."
+                : "نشان سند انتقال با موفقیت برداشته شد.");
+    }
 
     private static List<StockTransferItemRequest> NormalizeTransferItems(
         IEnumerable<StockTransferItemRequest> source)
